@@ -1,0 +1,12 @@
+build/out/
+build/cache/
+kernel/source/
+kernel/linux-*/
+*.cpio
+*.cpio.gz
+*.o
+*.a
+*.so
+*.d
+bin/
+obj/
