@@ -6,6 +6,7 @@ repo_root="$(cd -- "${script_dir}/.." && pwd)"
 
 kernel_image="${KERNEL_IMAGE:-${repo_root}/build/out/kernel/bzImage}"
 initramfs_image="${INITRAMFS:-${repo_root}/build/out/initramfs.cpio.gz}"
+serial_log="${SERIAL_LOG:-${repo_root}/out.txt}"
 
 if [[ ! -f "${kernel_image}" ]]; then
   echo "Kernel image not found: ${kernel_image}" >&2
@@ -19,9 +20,14 @@ if [[ ! -f "${initramfs_image}" ]]; then
   exit 1
 fi
 
+mkdir -p "$(dirname -- "${serial_log}")"
+rm -f "${serial_log}"
+echo "Serial console will be written to ${serial_log}"
+
 exec qemu-system-x86_64 \
   -kernel "${kernel_image}" \
   -initrd "${initramfs_image}" \
-  -append "console=ttyS0 rdinit=/init panic=-1" \
-  -nographic \
+  -append "console=ttyS0 console=tty0 rdinit=/init panic=-1" \
+  -display gtk \
+  -serial "file:${serial_log}" \
   -no-reboot

@@ -34,7 +34,7 @@ initramfs / rootfs
   ↓
 /init
   ↓
-myosd service manager
+ServiceManager
   ↓
 core .NET services
   ↓
@@ -45,7 +45,7 @@ Possible process tree:
 
 ```text
 /init
-  └─ myosd
+  └─ ServiceManager
       ├─ logd
       ├─ devd
       ├─ netd
@@ -53,7 +53,7 @@ Possible process tree:
       ├─ inputd
       ├─ gfxd
       ├─ busd
-      └─ shell
+      └─ Shell
 ```
 
 ## Proposed Repository Layout
@@ -63,10 +63,14 @@ Possible process tree:
 ├── TODO.md
 ├── README.md
 ├── LICENSE
+├── LinuxPlayground.sln
 ├── build/
 │   ├── build-kernel.sh
+│   ├── build-dotnet.sh
 │   ├── build-rootfs.sh
 │   ├── build-initramfs.sh
+│   ├── install-prereqs.sh
+│   ├── check-prereqs.sh
 │   ├── run-qemu.sh
 │   └── clean.sh
 ├── kernel/
@@ -107,36 +111,37 @@ Possible process tree:
 
 ## Phase 0: Repository Bootstrap
 
-* [ ] Add `README.md`.
-* [ ] Add `TODO.md`.
-* [ ] Add license file.
+* [x] Add `README.md`.
+* [x] Add `TODO.md`.
+* [x] Add license file.
 * [ ] Decide project name.
 * [ ] Decide userspace license.
-* [ ] Add `.gitignore`.
-* [ ] Add basic directory structure.
-* [ ] Add build scripts directory.
+* [x] Add `.gitignore`.
+* [x] Add basic directory structure.
+* [x] Add build scripts directory.
 * [ ] Add docs directory.
-* [ ] Add initial .NET solution file.
-* [ ] Add initial C# projects.
-* [ ] Add QEMU run script.
+* [x] Add initial .NET solution file.
+* [x] Add initial C# projects.
+* [x] Add QEMU run script.
 
 ## Phase 1: Boot a Custom Linux Kernel
 
-* [ ] Download or vendor Linux kernel source.
-* [ ] Create minimal x86_64 kernel config.
-* [ ] Enable initramfs support.
-* [ ] Enable devtmpfs.
-* [ ] Enable procfs.
-* [ ] Enable sysfs.
-* [ ] Enable tmpfs.
-* [ ] Enable serial console.
+* [x] Download or vendor Linux kernel source.
+* [x] Create minimal x86_64 kernel config.
+* [x] Enable initramfs support.
+* [x] Enable devtmpfs.
+* [x] Enable procfs.
+* [x] Enable sysfs.
+* [x] Enable tmpfs.
+* [x] Enable serial console.
+* [x] Enable VGA text console.
 * [ ] Enable framebuffer or DRM later.
 * [ ] Enable ext4 or another root filesystem later.
-* [ ] Build the kernel.
-* [ ] Boot kernel in QEMU.
+* [x] Build the kernel.
+* [x] Boot kernel in QEMU.
 * [ ] Confirm kernel panic happens because no init exists.
-* [ ] Add minimal initramfs with `/init`.
-* [ ] Boot successfully into our init.
+* [x] Add minimal initramfs with `/init`.
+* [x] Boot successfully into our init.
 
 ## Phase 2: Minimal `/init`
 
@@ -144,37 +149,38 @@ The first `/init` can be native C, Rust, Zig, or .NET Native AOT. It should stay
 
 Required behavior:
 
-* [ ] Open `/dev/console`.
-* [ ] Redirect stdin/stdout/stderr to `/dev/console`.
-* [ ] Mount `devtmpfs` on `/dev`.
-* [ ] Mount `proc` on `/proc`.
-* [ ] Mount `sysfs` on `/sys`.
-* [ ] Mount `tmpfs` on `/run`.
-* [ ] Mount `tmpfs` on `/tmp`.
-* [ ] Print boot status to console.
-* [ ] Start `/system/myosd`.
-* [ ] Reap zombie processes.
-* [ ] Restart `myosd` if it exits unexpectedly.
+* [x] Open `/dev/console`.
+* [x] Redirect stdin/stdout/stderr to `/dev/console`.
+* [x] Mount `devtmpfs` on `/dev`.
+* [x] Mount `proc` on `/proc`.
+* [x] Mount `sysfs` on `/sys`.
+* [x] Mount `tmpfs` on `/run`.
+* [x] Mount `tmpfs` on `/tmp`.
+* [x] Print boot status to console.
+* [x] Start `/system/ServiceManager`.
+* [x] Reap zombie processes.
+* [x] Restart `ServiceManager` if it exits unexpectedly.
 * [ ] Handle shutdown/reboot commands later.
 
 Do not make `/init` into the whole OS.
 
 ## Phase 3: .NET Build Strategy
 
-* [ ] Create .NET solution.
+* [x] Create .NET solution.
 * [ ] Create common runtime library project: `MyOs.Core`.
 * [ ] Create Linux interop library project: `MyOs.Linux`.
 * [ ] Create service framework library: `MyOs.Services`.
 * [ ] Create IPC library: `MyOs.Ipc`.
-* [ ] Create service manager project: `MyOs.ServiceManager`.
-* [ ] Configure Native AOT publishing for early services.
+* [x] Create service manager project: `MyOs.ServiceManager`.
+* [x] Create shell project: `MyOs.Shell`.
+* [x] Configure Native AOT publishing for early services.
 * [ ] Configure self-contained publishing for non-critical services.
 * [ ] Decide target runtime IDs:
 
-  * [ ] `linux-x64`
+  * [x] `linux-x64`
   * [ ] `linux-arm64` later
-* [ ] Create build script that publishes all .NET services into rootfs.
-* [ ] Copy published binaries to `/system`.
+* [x] Create build script that publishes all .NET services into rootfs.
+* [x] Copy published binaries to `/system`.
 
 Early `.csproj` settings for Native AOT services:
 
@@ -185,16 +191,23 @@ Early `.csproj` settings for Native AOT services:
   <RuntimeIdentifier>linux-x64</RuntimeIdentifier>
   <SelfContained>true</SelfContained>
   <PublishAot>true</PublishAot>
+  <StaticExecutable>true</StaticExecutable>
+  <LinkerFlavor>lld</LinkerFlavor>
   <InvariantGlobalization>true</InvariantGlobalization>
 </PropertyGroup>
 ```
 
 ## Phase 4: Service Manager
 
-Create `myosd`, the main .NET service manager.
+Create `ServiceManager`, the main .NET service manager.
 
 Responsibilities:
 
+* [x] Start as a Native AOT executable from `/system/ServiceManager`.
+* [x] Print boot status to console.
+* [x] Confirm `/dev`, `/proc`, `/sys`, `/run`, and `/tmp` are mounted.
+* [x] Start `/system/Shell`.
+* [x] Restart `Shell` if it exits unexpectedly.
 * [ ] Read service definitions.
 * [ ] Start configured services.
 * [ ] Track child process IDs.
@@ -238,7 +251,7 @@ Responsibilities:
 Simple protocol idea:
 
 ```json
-{"level":"info","service":"myosd","message":"started"}
+{"level":"info","service":"ServiceManager","message":"started"}
 ```
 
 ## Phase 6: IPC Layer
@@ -275,26 +288,28 @@ Create a minimal custom shell, not Bash.
 
 Responsibilities:
 
-* [ ] Run on `/dev/console`.
-* [ ] Print prompt.
-* [ ] Parse simple commands.
-* [ ] Talk to `myosd` over IPC.
+* [x] Run on `/dev/console`.
+* [x] Print prompt.
+* [x] Parse simple commands.
+* [ ] Talk to `ServiceManager` over IPC.
 * [ ] Talk to `logd` over IPC.
 * [ ] Implement built-in commands:
 
-  * [ ] `help`
-  * [ ] `clear`
-  * [ ] `echo`
+  * [x] `help`
+  * [x] `clear`
+  * [x] `echo`
   * [ ] `status`
   * [ ] `services`
   * [ ] `start <service>`
   * [ ] `stop <service>`
   * [ ] `restart <service>`
   * [ ] `logs`
-  * [ ] `mounts`
+  * [x] `mounts`
   * [ ] `devices`
-  * [ ] `reboot`
-  * [ ] `poweroff`
+  * [x] `pid`
+  * [x] `uptime`
+  * [x] `reboot`
+  * [x] `poweroff`
 * [ ] Add command history later.
 * [ ] Add line editing later.
 * [ ] Add scripting later only if useful.
@@ -517,11 +532,11 @@ Create scripts to build the whole OS image.
 
 Required scripts:
 
-* [ ] `build/build-kernel.sh`
-* [ ] `build/build-dotnet.sh`
+* [x] `build/build-kernel.sh`
+* [x] `build/build-dotnet.sh`
 * [ ] `build/build-rootfs.sh`
-* [ ] `build/build-initramfs.sh`
-* [ ] `build/run-qemu.sh`
+* [x] `build/build-initramfs.sh`
+* [x] `build/run-qemu.sh`
 * [ ] `build/clean.sh`
 
 Build flow:
@@ -546,10 +561,11 @@ boot in QEMU
 
 Initial QEMU target:
 
-* [ ] x86_64.
-* [ ] Serial console.
-* [ ] Initramfs boot.
-* [ ] No disk initially.
+* [x] x86_64.
+* [x] Serial console.
+* [x] VGA console.
+* [x] Initramfs boot.
+* [x] No disk initially.
 * [ ] Add virtual disk later.
 * [ ] Add virtio devices later.
 * [ ] Add networking later.
@@ -611,25 +627,25 @@ GPL-2.0-only
 
 ### Milestone 1: First Boot
 
-* [ ] Linux kernel boots in QEMU.
-* [ ] `/init` runs.
-* [ ] Console output works.
-* [ ] System does not immediately panic.
+* [x] Linux kernel boots in QEMU.
+* [x] `/init` runs.
+* [x] Console output works.
+* [x] System does not immediately panic.
 
 ### Milestone 2: Mounted Runtime Environment
 
-* [ ] `/dev` mounted.
-* [ ] `/proc` mounted.
-* [ ] `/sys` mounted.
-* [ ] `/run` mounted.
-* [ ] `/tmp` mounted.
+* [x] `/dev` mounted.
+* [x] `/proc` mounted.
+* [x] `/sys` mounted.
+* [x] `/run` mounted.
+* [x] `/tmp` mounted.
 
 ### Milestone 3: First .NET Service
 
-* [ ] Native AOT `myosd` runs.
-* [ ] `/init` starts `myosd`.
-* [ ] `myosd` prints to console.
-* [ ] `myosd` stays alive.
+* [x] Native AOT `ServiceManager` runs.
+* [x] `/init` starts `ServiceManager`.
+* [x] `ServiceManager` prints to console.
+* [x] `ServiceManager` stays alive.
 
 ### Milestone 4: Logging
 
@@ -640,8 +656,8 @@ GPL-2.0-only
 
 ### Milestone 5: Shell
 
-* [ ] Custom shell starts.
-* [ ] User can type commands.
+* [x] Custom shell starts.
+* [x] User can type commands.
 * [ ] Shell can query service status.
 * [ ] Shell can reboot/poweroff.
 
@@ -686,7 +702,7 @@ GPL-2.0-only
 
 * [ ] Project name?
 * [ ] Should `/init` be native C/Rust/Zig or .NET Native AOT?
-* [ ] Should `myosd` be PID 1 eventually, or stay as a child of a tiny init?
+* [ ] Should `ServiceManager` be PID 1 eventually, or stay as a child of a tiny init?
 * [ ] Should IPC start as JSON-lines or binary from the beginning?
 * [ ] Should service manifests be JSON, TOML, YAML, or custom?
 * [ ] Should apps be Native AOT only at first?

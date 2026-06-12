@@ -6,8 +6,9 @@ layout. Linux provides the kernel, drivers, syscalls, and low-level virtual
 filesystems, but LinuxPlayground should expose a smaller, opinionated operating
 system surface.
 
-The first boot milestone only needs `/init`, `/dev`, `/proc`, `/sys`, `/run`,
-and `/tmp`. The rest of this layout describes where the system should grow.
+The current boot milestone needs `/init`, `/dev`, `/proc`, `/sys`, `/run`,
+`/tmp`, `/system/ServiceManager`, and `/system/Shell`. The rest of this layout
+describes where the system should grow.
 
 ## Design Idea
 
@@ -66,8 +67,8 @@ Responsibilities:
 * Open and attach `/dev/console`.
 * Mount `/dev`, `/proc`, `/sys`, `/run`, and `/tmp`.
 * Print early boot status.
-* Start `/system/myosd` once the service manager exists.
-* Reap child processes and keep the system alive.
+* Start `/system/ServiceManager`.
+* Wait for the service manager and restart it if it exits.
 
 `/init` should stay tiny. It is not the shell, the service manager, the device
 manager, or the whole OS.
@@ -82,7 +83,8 @@ Expected contents:
 
 ```text
 /system/
-├── myosd
+├── ServiceManager
+├── Shell
 ├── logd
 ├── busd
 ├── devd
@@ -96,8 +98,9 @@ Expected contents:
 └── manifests/
 ```
 
-Early builds may place service executables directly in `/system`. As the OS
-grows, `/system/services` and `/system/manifests` can hold service definitions,
+Early builds place service executables directly in `/system`; currently these
+are the Native AOT `ServiceManager` and `Shell`. As the OS grows,
+`/system/services` and `/system/manifests` can hold service definitions,
 dependency metadata, restart policy, and permissions.
 
 User apps should not write here. Treat it as read-only at runtime once the
@@ -297,7 +300,7 @@ The filesystem is intentionally service-owned:
 /system        -> build system and OS updates
 /config        -> settings service / service manager
 /var/log       -> logd
-/run/myos      -> myosd and service IPC endpoints
+/run/myos      -> ServiceManager and service IPC endpoints
 /apps          -> app installer / app manager
 /users         -> shell, GUI, apps, storage service
 /volumes       -> storaged
@@ -330,7 +333,7 @@ can change the backend without changing app behavior.
 
 ## Early Boot Layout
 
-The current initramfs skeleton only needs:
+The current initramfs skeleton contains:
 
 ```text
 /
@@ -341,15 +344,20 @@ The current initramfs skeleton only needs:
 ├── run/
 ├── tmp/
 └── system/
+    ├── ServiceManager
+    └── Shell
 ```
 
 That is enough to prove:
 
 * The kernel can load the initramfs.
 * `/init` can run as PID 1.
-* Console output works.
+* VGA console output and keyboard input work.
+* Serial output can be captured separately for logs.
 * Basic Linux virtual filesystems can be mounted.
-* The future service manager has a stable location at `/system/myosd`.
+* The C# Native AOT service manager can start from `/system/ServiceManager`.
+* `/init` can supervise the service manager as a child process.
+* `ServiceManager` can supervise an interactive shell as a child process.
 
 Everything else should be added only when a real service or user workflow needs
 it.

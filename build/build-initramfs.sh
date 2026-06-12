@@ -7,6 +7,8 @@ repo_root="$(cd -- "${script_dir}/.." && pwd)"
 out_root="${repo_root}/build/out"
 initramfs_root="${out_root}/initramfs-root"
 init_binary="${out_root}/init"
+service_manager_binary="${out_root}/system/ServiceManager"
+shell_binary="${out_root}/system/Shell"
 initramfs_image="${INITRAMFS:-${out_root}/initramfs.cpio.gz}"
 initramfs_tmp="${initramfs_image}.tmp"
 
@@ -32,8 +34,15 @@ gcc \
   -o "${init_binary}" \
   "${repo_root}/src/Init/init.c"
 
+echo "Building ServiceManager..."
+bash "${script_dir}/build-dotnet.sh"
+
 cp "${init_binary}" "${initramfs_root}/init"
+cp "${service_manager_binary}" "${initramfs_root}/system/ServiceManager"
+cp "${shell_binary}" "${initramfs_root}/system/Shell"
 chmod 0755 "${initramfs_root}/init"
+chmod 0755 "${initramfs_root}/system/ServiceManager"
+chmod 0755 "${initramfs_root}/system/Shell"
 chmod 0755 "${initramfs_root}"
 chmod 0755 "${initramfs_root}/dev" "${initramfs_root}/proc" "${initramfs_root}/sys" "${initramfs_root}/run" "${initramfs_root}/tmp" "${initramfs_root}/system"
 
