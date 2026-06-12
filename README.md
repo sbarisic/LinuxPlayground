@@ -63,6 +63,7 @@ LinuxPlayground init starting
 [ServiceManager] confirmed /sys mounted
 [ServiceManager] confirmed /run mounted
 [ServiceManager] confirmed /tmp mounted
+[ServiceManager] listening on /run/myos/service.sock
 [ServiceManager] idle
 [ServiceManager] starting /system/Shell
 [Shell] starting pid=...
@@ -78,7 +79,8 @@ boot path, mounts the basic runtime filesystems, starts `/system/ServiceManager`
 and restarts it if it exits.
 
 The C# `ServiceManager` is intentionally tiny for now. It prints its PID,
-confirms the runtime mounts from `/proc/mounts`, and supervises `/system/Shell`.
+confirms the runtime mounts from `/proc/mounts`, supervises `/system/Shell`, and
+exposes the first SDK-backed IPC endpoint at `/run/myos/service.sock`.
 
 The custom shell currently supports:
 
@@ -86,6 +88,10 @@ The custom shell currently supports:
 help
 clear
 echo <text>
+services
+start <service>
+stop <service>
+restart <service>
 mounts
 pid
 uptime
@@ -94,3 +100,6 @@ poweroff
 ```
 
 `reboot` and `poweroff` are stubs until `/init` grows a shutdown control path.
+`services`, `start`, `stop`, and `restart` use the shared C# SDK to talk to
+`ServiceManager`; for now `Shell` is the only registered service, and stopping it
+is deliberately protected.

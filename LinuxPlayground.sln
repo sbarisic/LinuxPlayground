@@ -6,6 +6,10 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MyOs.ServiceManager", "src\
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MyOs.Shell", "src\MyOs.Shell\MyOs.Shell.csproj", "{A610CDEE-8599-41A2-860A-3420DF4AA7E1}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MyOs.Ipc", "src\MyOs.Ipc\MyOs.Ipc.csproj", "{78AA0305-2E8C-48AB-9D9F-D5854A13E095}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MyOs.Sdk", "src\MyOs.Sdk\MyOs.Sdk.csproj", "{7D746626-33EF-4A8B-9436-5B22D7A8B6E0}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -20,6 +24,14 @@ Global
 		{A610CDEE-8599-41A2-860A-3420DF4AA7E1}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{A610CDEE-8599-41A2-860A-3420DF4AA7E1}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{A610CDEE-8599-41A2-860A-3420DF4AA7E1}.Release|Any CPU.Build.0 = Release|Any CPU
+		{78AA0305-2E8C-48AB-9D9F-D5854A13E095}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{78AA0305-2E8C-48AB-9D9F-D5854A13E095}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{78AA0305-2E8C-48AB-9D9F-D5854A13E095}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{78AA0305-2E8C-48AB-9D9F-D5854A13E095}.Release|Any CPU.Build.0 = Release|Any CPU
+		{7D746626-33EF-4A8B-9436-5B22D7A8B6E0}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{7D746626-33EF-4A8B-9436-5B22D7A8B6E0}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{7D746626-33EF-4A8B-9436-5B22D7A8B6E0}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{7D746626-33EF-4A8B-9436-5B22D7A8B6E0}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

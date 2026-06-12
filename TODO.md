@@ -46,7 +46,6 @@ Possible process tree:
 ```text
 /init
   └─ ServiceManager
-      ├─ logd
       ├─ devd
       ├─ netd
       ├─ storaged
@@ -89,16 +88,16 @@ Possible process tree:
 │   └── initramfs/
 ├── src/
 │   ├── Init/
+│   ├── MyOs.Ipc/
+│   ├── MyOs.Sdk/
 │   ├── MyOs.ServiceManager/
-│   ├── MyOs.Logging/
 │   ├── MyOs.Shell/
 │   ├── MyOs.Bus/
 │   ├── MyOs.DeviceManager/
 │   ├── MyOs.Network/
 │   ├── MyOs.Storage/
 │   ├── MyOs.Input/
-│   ├── MyOs.Graphics/
-│   └── MyOs.Sdk/
+│   └── MyOs.Graphics/
 ├── docs/
 │   ├── architecture.md
 │   ├── boot.md
@@ -168,9 +167,10 @@ Do not make `/init` into the whole OS.
 
 * [x] Create .NET solution.
 * [ ] Create common runtime library project: `MyOs.Core`.
-* [ ] Create Linux interop library project: `MyOs.Linux`.
 * [ ] Create service framework library: `MyOs.Services`.
-* [ ] Create IPC library: `MyOs.Ipc`.
+* [x] Create IPC library: `MyOs.Ipc`.
+* [x] Create shared SDK project: `MyOs.Sdk`.
+* [x] Put native Linux/syscall helper area under `MyOs.Sdk`.
 * [x] Create service manager project: `MyOs.ServiceManager`.
 * [x] Create shell project: `MyOs.Shell`.
 * [x] Configure Native AOT publishing for early services.
@@ -210,12 +210,11 @@ Responsibilities:
 * [x] Restart `Shell` if it exits unexpectedly.
 * [ ] Read service definitions.
 * [ ] Start configured services.
-* [ ] Track child process IDs.
+* [x] Track child process IDs.
 * [ ] Restart critical services.
 * [ ] Capture stdout/stderr.
-* [ ] Forward logs to `logd`.
-* [ ] Provide service status API.
-* [ ] Provide start/stop/restart API.
+* [x] Provide service status API.
+* [x] Provide start/stop/restart API.
 * [ ] Handle ordered shutdown.
 * [ ] Support dependencies between services later.
 * [ ] Support service manifests later.
@@ -224,45 +223,22 @@ Example service manifest:
 
 ```json
 {
-  "name": "logd",
-  "exec": "/system/logd",
+  "name": "Shell",
+  "exec": "/system/Shell",
   "restart": "always",
   "critical": true
 }
 ```
 
-## Phase 5: Logging Service
-
-Create `logd`.
-
-Responsibilities:
-
-* [ ] Listen on `/run/myos/log.sock`.
-* [ ] Accept log messages from services and apps.
-* [ ] Write logs to `/var/log/system.log`.
-* [ ] Mirror important logs to `/dev/console`.
-* [ ] Add timestamps.
-* [ ] Add service names.
-* [ ] Add severity levels.
-* [ ] Support log query API later.
-* [ ] Support ring-buffer logging later.
-* [ ] Support crash logs later.
-
-Simple protocol idea:
-
-```json
-{"level":"info","service":"ServiceManager","message":"started"}
-```
-
-## Phase 6: IPC Layer
+## Phase 5: IPC Layer
 
 Use Unix domain sockets as the first IPC mechanism.
 
-* [ ] Implement socket server helper in C#.
-* [ ] Implement socket client helper in C#.
-* [ ] Use JSON-lines protocol at first.
-* [ ] Add request/response IDs.
-* [ ] Add error response format.
+* [x] Implement socket server helper in C#.
+* [x] Implement socket client helper in C#.
+* [x] Use JSON-lines protocol at first.
+* [x] Add request/response IDs.
+* [x] Add error response format.
 * [ ] Add service discovery later.
 * [ ] Add binary protocol later if needed.
 * [ ] Add peer credential checking.
@@ -273,7 +249,6 @@ Use Unix domain sockets as the first IPC mechanism.
 Initial sockets:
 
 ```text
-/run/myos/log.sock
 /run/myos/service.sock
 /run/myos/bus.sock
 /run/myos/input.sock
@@ -282,7 +257,7 @@ Initial sockets:
 /run/myos/storage.sock
 ```
 
-## Phase 7: Shell
+## Phase 6: Shell
 
 Create a minimal custom shell, not Bash.
 
@@ -291,19 +266,17 @@ Responsibilities:
 * [x] Run on `/dev/console`.
 * [x] Print prompt.
 * [x] Parse simple commands.
-* [ ] Talk to `ServiceManager` over IPC.
-* [ ] Talk to `logd` over IPC.
+* [x] Talk to `ServiceManager` over IPC.
 * [ ] Implement built-in commands:
 
   * [x] `help`
   * [x] `clear`
   * [x] `echo`
   * [ ] `status`
-  * [ ] `services`
-  * [ ] `start <service>`
-  * [ ] `stop <service>`
-  * [ ] `restart <service>`
-  * [ ] `logs`
+  * [x] `services`
+  * [x] `start <service>`
+  * [x] `stop <service>`
+  * [x] `restart <service>`
   * [x] `mounts`
   * [ ] `devices`
   * [x] `pid`
@@ -314,7 +287,7 @@ Responsibilities:
 * [ ] Add line editing later.
 * [ ] Add scripting later only if useful.
 
-## Phase 8: Device Manager
+## Phase 7: Device Manager
 
 Create `devd`.
 
@@ -336,9 +309,9 @@ Implementation notes:
 * May require native interop for netlink.
 * May require parsing `/sys`.
 * Keep the high-level logic in C#.
-* Put ugly Linux ABI code in `MyOs.Linux` or a small native helper library.
+* Put ugly Linux ABI code behind SDK native helpers instead of exposing it to apps.
 
-## Phase 9: Storage Service
+## Phase 8: Storage Service
 
 Create `storaged`.
 
@@ -364,7 +337,7 @@ Likely required Linux calls:
 * `/proc/mounts`
 * `/sys/class/block`
 
-## Phase 10: Network Service
+## Phase 9: Network Service
 
 Create `netd`.
 
@@ -388,7 +361,7 @@ Implementation notes:
 * DHCP can be implemented later.
 * Avoid depending on NetworkManager, systemd-networkd, or dhcpcd.
 
-## Phase 11: Input Service
+## Phase 10: Input Service
 
 Create `inputd`.
 
@@ -408,7 +381,7 @@ Implementation notes:
 * Apps should not read `/dev/input` directly.
 * `inputd` should become the single trusted input broker.
 
-## Phase 12: Graphics Service
+## Phase 11: Graphics Service
 
 Create `gfxd`.
 
@@ -449,7 +422,7 @@ Stage 4:
 
 Do not make every app talk to DRM/KMS directly. `gfxd` should own display hardware.
 
-## Phase 13: App Model
+## Phase 12: App Model
 
 Define a custom app model.
 
@@ -498,7 +471,7 @@ Possible permissions:
 * [ ] `system.status`
 * [ ] `service.control`
 
-## Phase 14: MyOS SDK
+## Phase 13: MyOS SDK
 
 Create a C# SDK for apps.
 
@@ -516,17 +489,26 @@ var status = await MyOs.Network.GetStatusAsync();
 
 SDK responsibilities:
 
-* [ ] Hide raw socket IPC.
-* [ ] Provide typed service clients.
+* [x] Hide raw socket IPC.
+* [x] Provide typed service clients.
+* [x] Provide a native Linux/syscall helper area for internal SDK use.
 * [ ] Provide logging API.
 * [ ] Provide graphics API.
 * [ ] Provide input API.
 * [ ] Provide storage API.
-* [ ] Provide service discovery.
+* [x] Provide basic service discovery.
 * [ ] Provide app manifest helpers.
 * [ ] Provide permission helpers.
 
-## Phase 15: Build System
+Native helper responsibilities:
+
+* [x] Start with an internal namespace for Linux-specific helpers.
+* [ ] Wrap `mount` and `umount2` when storage needs them.
+* [ ] Wrap `ioctl` when device, input, storage, or graphics code needs it.
+* [ ] Wrap `reboot` when shutdown control moves beyond shell stubs.
+* [ ] Keep raw ABI details out of app-facing APIs.
+
+## Phase 14: Build System
 
 Create scripts to build the whole OS image.
 
@@ -557,7 +539,7 @@ create initramfs
 boot in QEMU
 ```
 
-## Phase 16: QEMU Target
+## Phase 15: QEMU Target
 
 Initial QEMU target:
 
@@ -581,7 +563,7 @@ qemu-system-x86_64
   -nographic
 ```
 
-## Phase 17: Documentation
+## Phase 16: Documentation
 
 Write docs as the project evolves.
 
@@ -599,7 +581,7 @@ Write docs as the project evolves.
 * [ ] `docs/running-qemu.md`
 * [ ] `docs/licensing.md`
 
-## Phase 18: Licensing
+## Phase 17: Licensing
 
 Initial plan:
 
@@ -647,35 +629,28 @@ GPL-2.0-only
 * [x] `ServiceManager` prints to console.
 * [x] `ServiceManager` stays alive.
 
-### Milestone 4: Logging
-
-* [ ] `logd` starts.
-* [ ] Other services can send log messages.
-* [ ] Logs appear on console.
-* [ ] Logs are saved to file.
-
-### Milestone 5: Shell
+### Milestone 4: Shell
 
 * [x] Custom shell starts.
 * [x] User can type commands.
-* [ ] Shell can query service status.
+* [x] Shell can query service status.
 * [ ] Shell can reboot/poweroff.
 
-### Milestone 6: Basic IPC
+### Milestone 5: Basic IPC
 
-* [ ] Unix domain socket server works.
-* [ ] Unix domain socket client works.
-* [ ] Request/response protocol works.
+* [x] Unix domain socket server works.
+* [x] Unix domain socket client works.
+* [x] Request/response protocol works.
 * [ ] Multiple services can communicate.
 
-### Milestone 7: Basic Devices
+### Milestone 6: Basic Devices
 
 * [ ] Device manager can list `/sys`.
 * [ ] Input service can read keyboard.
 * [ ] Storage service can list block devices.
 * [ ] Network service can list network interfaces.
 
-### Milestone 8: Basic Graphics
+### Milestone 7: Basic Graphics
 
 * [ ] Display output works.
 * [ ] Draw pixels.
@@ -724,7 +699,6 @@ boot Linux
 run /init
 mount basic filesystems
 start .NET service manager
-start logging service
 start custom shell
 accept simple commands
 reboot cleanly

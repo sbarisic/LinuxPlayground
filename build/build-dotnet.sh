@@ -44,7 +44,6 @@ publish_native_aot() {
     -p:PublishAot=true \
     -p:StaticExecutable=true \
     -p:LinkerFlavor=lld \
-    -p:AssemblyName="${name}" \
     -p:DebugType=none \
     -p:DebugSymbols=false \
     --output "${publish_dir}"

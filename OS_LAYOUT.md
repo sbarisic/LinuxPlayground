@@ -22,7 +22,7 @@ not the normal app or user API.
 The filesystem has three broad layers:
 
 1. Boot and kernel-facing internals.
-2. OS-owned services, configuration, logs, and runtime state.
+2. OS-owned services, configuration, and runtime state.
 3. User-facing apps, data, settings, and mounted volumes.
 
 The early system may run entirely from an initramfs. Later, the same namespace
@@ -85,7 +85,6 @@ Expected contents:
 /system/
 ├── ServiceManager
 ├── Shell
-├── logd
 ├── busd
 ├── devd
 ├── storaged
@@ -139,8 +138,8 @@ Expected contents:
 └── state/
 ```
 
-`logd` should eventually write persistent logs under `/var/log`. Crash reports,
-service state snapshots, and other OS-maintained mutable data belong here.
+Crash reports, service state snapshots, and other OS-maintained mutable data
+belong here once persistent storage exists.
 
 If the machine is running initramfs-only, `/var` may be temporary or absent.
 
@@ -153,7 +152,6 @@ Expected contents:
 ```text
 /run/
 └── myos/
-    ├── log.sock
     ├── service.sock
     ├── bus.sock
     ├── input.sock
@@ -299,7 +297,6 @@ The filesystem is intentionally service-owned:
 /init          -> init
 /system        -> build system and OS updates
 /config        -> settings service / service manager
-/var/log       -> logd
 /run/myos      -> ServiceManager and service IPC endpoints
 /apps          -> app installer / app manager
 /users         -> shell, GUI, apps, storage service
@@ -323,8 +320,6 @@ The shell or GUI should present simple concepts:
 * Drives and mounted media are named volumes.
 * System status comes from services, not from manually reading `/proc`.
 * Devices are listed through the OS device API, not by browsing `/dev`.
-* Logs are available through a logs command or viewer, not by tailing random
-  files.
 
 The implementation can still use Linux heavily underneath. The important rule is
 that Linux-specific paths should be treated as backend plumbing. LinuxPlayground
@@ -342,6 +337,8 @@ The current initramfs skeleton contains:
 ├── proc/
 ├── sys/
 ├── run/
+│   └── myos/
+│       └── service.sock
 ├── tmp/
 └── system/
     ├── ServiceManager
@@ -358,6 +355,8 @@ That is enough to prove:
 * The C# Native AOT service manager can start from `/system/ServiceManager`.
 * `/init` can supervise the service manager as a child process.
 * `ServiceManager` can supervise an interactive shell as a child process.
+* The shell can query `ServiceManager` through the shared SDK and
+  `/run/myos/service.sock`.
 
 Everything else should be added only when a real service or user workflow needs
 it.

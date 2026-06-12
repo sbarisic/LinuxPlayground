@@ -1,6 +1,9 @@
 using System.Text;
+using MyOs.Sdk;
 
 using SerialLogScope serialLog = SerialLogScope.TryOpen("/dev/ttyS0");
+ServiceManagerClient serviceManager = new();
+
 Console.WriteLine($"[Shell] starting pid={Environment.ProcessId}");
 Console.WriteLine("Type 'help' for commands.");
 
@@ -14,10 +17,10 @@ while (true)
         return;
     }
 
-    RunCommand(line.Trim());
+    await RunCommandAsync(line.Trim(), serviceManager);
 }
 
-static void RunCommand(string line)
+static async Task RunCommandAsync(string line, ServiceManagerClient serviceManager)
 {
     if (line.Length == 0)
     {
@@ -35,7 +38,7 @@ static void RunCommand(string line)
     else
     {
         command = line[..firstSpace];
-        arguments = line[(firstSpace + 1)..];
+        arguments = line[(firstSpace + 1)..].Trim();
     }
 
     switch (command)
@@ -48,6 +51,18 @@ static void RunCommand(string line)
             break;
         case "echo":
             Console.WriteLine(arguments);
+            break;
+        case "services":
+            await PrintServicesAsync(serviceManager);
+            break;
+        case "start":
+            await RunServiceOperationAsync("start", arguments, serviceManager.StartServiceAsync);
+            break;
+        case "stop":
+            await RunServiceOperationAsync("stop", arguments, serviceManager.StopServiceAsync);
+            break;
+        case "restart":
+            await RunServiceOperationAsync("restart", arguments, serviceManager.RestartServiceAsync);
             break;
         case "mounts":
             PrintMounts();
@@ -71,14 +86,58 @@ static void RunCommand(string line)
 static void PrintHelp()
 {
     Console.WriteLine("Commands:");
-    Console.WriteLine("  help           Show this help");
-    Console.WriteLine("  clear          Clear the console");
-    Console.WriteLine("  echo <text>    Print text");
-    Console.WriteLine("  mounts         Show mounted filesystems");
-    Console.WriteLine("  pid            Show shell process ID");
-    Console.WriteLine("  uptime         Show system uptime");
-    Console.WriteLine("  reboot         Stub reboot command");
-    Console.WriteLine("  poweroff       Stub poweroff command");
+    Console.WriteLine("  help               Show this help");
+    Console.WriteLine("  clear              Clear the console");
+    Console.WriteLine("  echo <text>        Print text");
+    Console.WriteLine("  services           Show services");
+    Console.WriteLine("  start <service>    Start a service");
+    Console.WriteLine("  stop <service>     Stop a service");
+    Console.WriteLine("  restart <service>  Restart a service");
+    Console.WriteLine("  mounts             Show mounted filesystems");
+    Console.WriteLine("  pid                Show shell process ID");
+    Console.WriteLine("  uptime             Show system uptime");
+    Console.WriteLine("  reboot             Stub reboot command");
+    Console.WriteLine("  poweroff           Stub poweroff command");
+}
+
+static async Task PrintServicesAsync(ServiceManagerClient serviceManager)
+{
+    try
+    {
+        IReadOnlyList<ServiceInfo> services = await serviceManager.ListServicesAsync();
+        Console.WriteLine($"{"NAME",-14} {"STATE",-10} {"PID",-6} {"RESTART",-8} EXEC");
+        foreach (ServiceInfo service in services)
+        {
+            string pid = service.Pid?.ToString() ?? "-";
+            Console.WriteLine($"{service.Name,-14} {service.State,-10} {pid,-6} {service.Restart,-8} {service.Exec}");
+        }
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"services: could not contact ServiceManager: {ex.Message}");
+    }
+}
+
+static async Task RunServiceOperationAsync(
+    string command,
+    string serviceName,
+    Func<string, CancellationToken, Task<ServiceOperationResult>> operation)
+{
+    if (string.IsNullOrWhiteSpace(serviceName))
+    {
+        Console.WriteLine($"usage: {command} <service>");
+        return;
+    }
+
+    try
+    {
+        ServiceOperationResult result = await operation(serviceName, CancellationToken.None);
+        Console.WriteLine(result.Success ? result.Message : $"{command}: {result.Message}");
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"{command}: could not contact ServiceManager: {ex.Message}");
+    }
 }
 
 static void PrintMounts()
