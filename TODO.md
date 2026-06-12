@@ -84,10 +84,13 @@ Possible process tree:
 │   │   ├── run/
 │   │   ├── tmp/
 │   │   ├── system/
-│   │   └── apps/
+│   │   └── Apps/
 │   └── initramfs/
 ├── src/
+│   ├── Apps/
+│   │   └── HWorld/
 │   ├── Init/
+│   ├── MyOs.Core/
 │   ├── MyOs.Ipc/
 │   ├── MyOs.Sdk/
 │   ├── MyOs.ServiceManager/
@@ -158,6 +161,7 @@ Required behavior:
 * [x] Print boot status to console.
 * [x] Start `/system/ServiceManager`.
 * [x] Reap zombie processes.
+* [x] Reap orphaned child processes while `ServiceManager` is alive.
 * [x] Restart `ServiceManager` if it exits unexpectedly.
 * [ ] Handle shutdown/reboot commands later.
 
@@ -166,21 +170,24 @@ Do not make `/init` into the whole OS.
 ## Phase 3: .NET Build Strategy
 
 * [x] Create .NET solution.
-* [ ] Create common runtime library project: `MyOs.Core`.
+* [x] Create common runtime library project: `MyOs.Core`.
+* [x] Add shared system path constants.
 * [ ] Create service framework library: `MyOs.Services`.
 * [x] Create IPC library: `MyOs.Ipc`.
 * [x] Create shared SDK project: `MyOs.Sdk`.
 * [x] Put native Linux/syscall helper area under `MyOs.Sdk`.
 * [x] Create service manager project: `MyOs.ServiceManager`.
 * [x] Create shell project: `MyOs.Shell`.
+* [x] Create first managed app project: `HWorld`.
 * [x] Configure Native AOT publishing for early services.
-* [ ] Configure self-contained publishing for non-critical services.
+* [x] Configure self-contained publishing for managed apps.
 * [ ] Decide target runtime IDs:
 
   * [x] `linux-x64`
   * [ ] `linux-arm64` later
 * [x] Create build script that publishes all .NET services into rootfs.
 * [x] Copy published binaries to `/system`.
+* [x] Copy published app bundles to `/Apps`.
 
 Early `.csproj` settings for Native AOT services:
 
@@ -257,6 +264,11 @@ Initial sockets:
 /run/myos/storage.sock
 ```
 
+Shared path constants:
+
+* [x] Put `/run/myos/service.sock` behind `MyOs.Core.SystemPaths`.
+* [x] Keep `IpcPaths.ServiceManagerSocket` as the compatibility entrypoint for IPC callers.
+
 ## Phase 6: Shell
 
 Create a minimal custom shell, not Bash.
@@ -273,6 +285,8 @@ Responsibilities:
   * [x] `clear`
   * [x] `echo`
   * [ ] `status`
+  * [x] `apps`
+  * [x] `run <app>`
   * [x] `services`
   * [x] `start <service>`
   * [x] `stop <service>`
@@ -429,9 +443,9 @@ Define a custom app model.
 Ideas:
 
 ```text
-/apps/Calculator.app/
-/apps/Settings.app/
-/apps/Terminal.app/
+/Apps/Calculator.app/
+/Apps/Settings.app/
+/Apps/Terminal.app/
 ```
 
 Example app layout:
@@ -439,9 +453,9 @@ Example app layout:
 ```text
 Calculator.app/
 ├── manifest.json
-├── app
-├── resources/
-└── permissions.json
+├── bin/
+│   └── Calculator.dll
+└── resources/
 ```
 
 Manifest fields:
@@ -450,15 +464,19 @@ Manifest fields:
 * [ ] App ID.
 * [ ] Version.
 * [ ] Executable path.
-* [ ] Runtime type:
-
-  * [ ] Native AOT
-  * [ ] self-contained .NET
-  * [ ] managed DLL later
 * [ ] Required permissions.
 * [ ] Required services.
 * [ ] Icon path.
 * [ ] Windowing mode.
+
+Early app assumptions:
+
+* [x] Apps live under `/Apps/<Name>.app/`.
+* [x] Apps are managed .NET code for now.
+* [x] `manifest.json` does not need a `runtime` field yet.
+* [x] The first app can use `bin/<AppName>` as its entry point.
+* [x] Add first hello-world app bundle: `/Apps/HWorld.app/`.
+* [x] Add shell app launcher for `run HWorld`.
 
 Possible permissions:
 
@@ -533,6 +551,10 @@ create rootfs directory
 copy /init
   ↓
 copy /system services
+  ↓
+copy /Apps bundles
+  ↓
+copy managed app runtime dependencies
   ↓
 create initramfs
   ↓
@@ -643,14 +665,21 @@ GPL-2.0-only
 * [x] Request/response protocol works.
 * [ ] Multiple services can communicate.
 
-### Milestone 6: Basic Devices
+### Milestone 6: First App Bundle
+
+* [x] `/Apps/HWorld.app` is packaged.
+* [x] Shell can list app bundles.
+* [x] Shell can run `HWorld`.
+* [x] Managed app can use the SDK.
+
+### Milestone 7: Basic Devices
 
 * [ ] Device manager can list `/sys`.
 * [ ] Input service can read keyboard.
 * [ ] Storage service can list block devices.
 * [ ] Network service can list network interfaces.
 
-### Milestone 7: Basic Graphics
+### Milestone 8: Basic Graphics
 
 * [ ] Display output works.
 * [ ] Draw pixels.
@@ -680,7 +709,7 @@ GPL-2.0-only
 * [ ] Should `ServiceManager` be PID 1 eventually, or stay as a child of a tiny init?
 * [ ] Should IPC start as JSON-lines or binary from the beginning?
 * [ ] Should service manifests be JSON, TOML, YAML, or custom?
-* [ ] Should apps be Native AOT only at first?
+* [x] Should apps be Native AOT only at first? No; start with managed .NET apps.
 * [ ] Should the first graphics target be framebuffer or DRM/KMS?
 * [ ] Should the root filesystem initially be initramfs-only?
 * [ ] Should the first real disk filesystem be ext4?
@@ -700,6 +729,7 @@ run /init
 mount basic filesystems
 start .NET service manager
 start custom shell
+list and run first app bundle
 accept simple commands
 reboot cleanly
 ```

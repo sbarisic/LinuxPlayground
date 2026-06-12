@@ -14,6 +14,7 @@ packages=(
   flex
   clang
   lld
+  libc-bin
   libssl-dev
   libelf-dev
   zlib1g-dev

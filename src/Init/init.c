@@ -3,7 +3,6 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <stdarg.h>
-#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -13,6 +12,13 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
+#define DEV_PATH "/dev"
+#define CONSOLE_PATH "/dev/console"
+#define SERIAL_PATH "/dev/ttyS0"
+#define PROC_PATH "/proc"
+#define SYS_PATH "/sys"
+#define RUN_PATH "/run"
+#define TMP_PATH "/tmp"
 #define SERVICE_MANAGER_PATH "/system/ServiceManager"
 
 static int serial_fd = -1;
@@ -45,22 +51,22 @@ static void ensure_directory(const char *path, mode_t mode)
 
 static void setup_console(void)
 {
-    ensure_directory("/dev", 0755);
+    ensure_directory(DEV_PATH, 0755);
 
-    if (mknod("/dev/console", S_IFCHR | 0600, makedev(5, 1)) != 0 && errno != EEXIST) {
+    if (mknod(CONSOLE_PATH, S_IFCHR | 0600, makedev(5, 1)) != 0 && errno != EEXIST) {
         /* The kernel may still provide /dev/console after devtmpfs is mounted. */
     }
 
-    if (mknod("/dev/ttyS0", S_IFCHR | 0600, makedev(4, 64)) != 0 && errno != EEXIST) {
+    if (mknod(SERIAL_PATH, S_IFCHR | 0600, makedev(4, 64)) != 0 && errno != EEXIST) {
         /* Serial logging is best-effort; VGA remains the primary console. */
     }
 
-    int console_fd = open("/dev/console", O_RDWR | O_CLOEXEC);
+    int console_fd = open(CONSOLE_PATH, O_RDWR | O_CLOEXEC);
     if (console_fd < 0) {
         return;
     }
 
-    serial_fd = open("/dev/ttyS0", O_WRONLY | O_CLOEXEC | O_NOCTTY);
+    serial_fd = open(SERIAL_PATH, O_WRONLY | O_CLOEXEC | O_NOCTTY);
 
     dup2(console_fd, STDIN_FILENO);
     dup2(console_fd, STDOUT_FILENO);
@@ -106,46 +112,78 @@ static void log_service_manager_exit(int status)
     console_write("[init] ServiceManager stopped with status %d\n", status);
 }
 
+static void log_orphan_exit(pid_t pid, int status)
+{
+    if (WIFEXITED(status)) {
+        console_write("[init] reaped child %d exited with status %d\n", pid, WEXITSTATUS(status));
+        return;
+    }
+
+    if (WIFSIGNALED(status)) {
+        console_write("[init] reaped child %d terminated by signal %d\n", pid, WTERMSIG(status));
+        return;
+    }
+
+    console_write("[init] reaped child %d stopped with status %d\n", pid, status);
+}
+
+static pid_t start_service_manager(void)
+{
+    console_write("[init] starting %s\n", SERVICE_MANAGER_PATH);
+
+    pid_t pid = fork();
+    if (pid < 0) {
+        console_write("[init] fork failed: %s\n", strerror(errno));
+        return -1;
+    }
+
+    if (pid == 0) {
+        execl(SERVICE_MANAGER_PATH, SERVICE_MANAGER_PATH, (char *)NULL);
+        console_write("[init] exec %s failed: %s\n", SERVICE_MANAGER_PATH, strerror(errno));
+        _exit(127);
+    }
+
+    return pid;
+}
+
 static void supervise_service_manager(void)
 {
-    for (;;) {
-        console_write("[init] starting %s\n", SERVICE_MANAGER_PATH);
+    pid_t service_manager_pid = -1;
 
-        pid_t pid = fork();
-        if (pid < 0) {
-            console_write("[init] fork failed: %s\n", strerror(errno));
+    for (;;) {
+        if (service_manager_pid < 0) {
+            service_manager_pid = start_service_manager();
+        }
+
+        if (service_manager_pid < 0) {
             sleep(1);
             continue;
         }
 
-        if (pid == 0) {
-            execl(SERVICE_MANAGER_PATH, SERVICE_MANAGER_PATH, (char *)NULL);
-            console_write("[init] exec %s failed: %s\n", SERVICE_MANAGER_PATH, strerror(errno));
-            _exit(127);
-        }
-
-        bool have_status = false;
         int status = 0;
-        for (;;) {
-            pid_t waited = waitpid(pid, &status, 0);
-            if (waited == pid) {
-                have_status = true;
-                break;
-            }
+        pid_t waited = waitpid(-1, &status, 0);
+        if (waited < 0 && errno == EINTR) {
+            continue;
+        }
 
-            if (waited < 0 && errno == EINTR) {
-                continue;
-            }
-
+        if (waited < 0) {
             console_write("[init] waitpid failed: %s\n", strerror(errno));
-            break;
+            if (errno == ECHILD) {
+                service_manager_pid = -1;
+            }
+            sleep(1);
+            continue;
         }
 
-        if (have_status) {
+        if (waited == service_manager_pid) {
             log_service_manager_exit(status);
+            service_manager_pid = -1;
+            console_write("[init] restarting ServiceManager in 1 second\n");
+            sleep(1);
+            continue;
         }
-        console_write("[init] restarting ServiceManager in 1 second\n");
-        sleep(1);
+
+        log_orphan_exit(waited, status);
     }
 }
 
@@ -155,11 +193,11 @@ int main(void)
 
     console_write("LinuxPlayground init starting\n");
 
-    mount_filesystem("devtmpfs", "devtmpfs", "/dev", "devtmpfs", MS_NOSUID);
-    mount_filesystem("proc", "proc", "/proc", "proc", MS_NOSUID | MS_NOEXEC | MS_NODEV);
-    mount_filesystem("sysfs", "sysfs", "/sys", "sysfs", MS_NOSUID | MS_NOEXEC | MS_NODEV);
-    mount_filesystem("tmpfs", "tmpfs", "/run", "tmpfs", MS_NOSUID | MS_NODEV);
-    mount_filesystem("tmpfs", "tmpfs", "/tmp", "tmpfs", MS_NOSUID | MS_NODEV);
+    mount_filesystem("devtmpfs", "devtmpfs", DEV_PATH, "devtmpfs", MS_NOSUID);
+    mount_filesystem("proc", "proc", PROC_PATH, "proc", MS_NOSUID | MS_NOEXEC | MS_NODEV);
+    mount_filesystem("sysfs", "sysfs", SYS_PATH, "sysfs", MS_NOSUID | MS_NOEXEC | MS_NODEV);
+    mount_filesystem("tmpfs", "tmpfs", RUN_PATH, "tmpfs", MS_NOSUID | MS_NODEV);
+    mount_filesystem("tmpfs", "tmpfs", TMP_PATH, "tmpfs", MS_NOSUID | MS_NODEV);
 
     supervise_service_manager();
 

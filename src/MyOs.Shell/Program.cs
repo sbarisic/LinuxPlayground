@@ -1,7 +1,10 @@
+using System.Diagnostics;
 using System.Text;
+using System.Text.Json;
+using MyOs;
 using MyOs.Sdk;
 
-using SerialLogScope serialLog = SerialLogScope.TryOpen("/dev/ttyS0");
+using SerialLogScope serialLog = SerialLogScope.TryOpen(SystemPaths.Serial);
 ServiceManagerClient serviceManager = new();
 
 Console.WriteLine($"[Shell] starting pid={Environment.ProcessId}");
@@ -55,6 +58,12 @@ static async Task RunCommandAsync(string line, ServiceManagerClient serviceManag
         case "services":
             await PrintServicesAsync(serviceManager);
             break;
+        case "apps":
+            PrintApps();
+            break;
+        case "run":
+            await RunAppAsync(arguments);
+            break;
         case "start":
             await RunServiceOperationAsync("start", arguments, serviceManager.StartServiceAsync);
             break;
@@ -90,6 +99,8 @@ static void PrintHelp()
     Console.WriteLine("  clear              Clear the console");
     Console.WriteLine("  echo <text>        Print text");
     Console.WriteLine("  services           Show services");
+    Console.WriteLine("  apps               Show installed apps");
+    Console.WriteLine("  run <app>          Run an app");
     Console.WriteLine("  start <service>    Start a service");
     Console.WriteLine("  stop <service>     Stop a service");
     Console.WriteLine("  restart <service>  Restart a service");
@@ -98,6 +109,145 @@ static void PrintHelp()
     Console.WriteLine("  uptime             Show system uptime");
     Console.WriteLine("  reboot             Stub reboot command");
     Console.WriteLine("  poweroff           Stub poweroff command");
+}
+
+static void PrintApps()
+{
+    try
+    {
+        IReadOnlyList<AppManifest> apps = LoadApps();
+        if (apps.Count == 0)
+        {
+            Console.WriteLine("No apps installed.");
+            return;
+        }
+
+        Console.WriteLine($"{"NAME",-14} {"ID",-18} {"VERSION",-8} KIND");
+        foreach (AppManifest app in apps)
+        {
+            Console.WriteLine($"{app.Name,-14} {app.Id,-18} {app.Version,-8} {app.Kind}");
+        }
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"apps: could not list apps: {ex.Message}");
+    }
+}
+
+static async Task RunAppAsync(string appName)
+{
+    if (string.IsNullOrWhiteSpace(appName))
+    {
+        Console.WriteLine("usage: run <app>");
+        return;
+    }
+
+    if (appName.Contains('/') || appName.Contains('\\'))
+    {
+        Console.WriteLine("run: app names cannot contain path separators");
+        return;
+    }
+
+    string appDirectory = Path.Combine(SystemPaths.Apps, $"{appName}.app");
+    string manifestPath = Path.Combine(appDirectory, "manifest.json");
+    if (!File.Exists(manifestPath))
+    {
+        Console.WriteLine($"run: app not found: {appName}. Type 'apps' to list apps.");
+        return;
+    }
+
+    AppManifest manifest;
+    try
+    {
+        manifest = ReadManifest(manifestPath, appDirectory);
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"run: could not read {appName} manifest: {ex.Message}");
+        return;
+    }
+
+    string executable = Path.Combine(appDirectory, manifest.Entry);
+    if (!File.Exists(executable))
+    {
+        Console.WriteLine($"run: app entry not found: {manifest.Entry}");
+        return;
+    }
+
+    using Process app = new()
+    {
+        StartInfo = new ProcessStartInfo
+        {
+            FileName = executable,
+            WorkingDirectory = appDirectory,
+            UseShellExecute = false,
+        },
+    };
+
+    try
+    {
+        app.Start();
+        await app.WaitForExitAsync();
+        Console.WriteLine($"{manifest.Name} exited with status {app.ExitCode}");
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"run: failed to start {manifest.Name}: {ex.Message}");
+    }
+}
+
+static IReadOnlyList<AppManifest> LoadApps()
+{
+    List<AppManifest> apps = new();
+    if (!Directory.Exists(SystemPaths.Apps))
+    {
+        return apps;
+    }
+
+    foreach (string manifestPath in Directory.EnumerateFiles(SystemPaths.Apps, "manifest.json", SearchOption.AllDirectories))
+    {
+        string? appDirectory = Path.GetDirectoryName(manifestPath);
+        if (appDirectory is null || !appDirectory.EndsWith(".app", StringComparison.Ordinal))
+        {
+            continue;
+        }
+
+        try
+        {
+            apps.Add(ReadManifest(manifestPath, appDirectory));
+        }
+        catch
+        {
+        }
+    }
+
+    apps.Sort((left, right) => string.Compare(left.Name, right.Name, StringComparison.OrdinalIgnoreCase));
+    return apps;
+}
+
+static AppManifest ReadManifest(string manifestPath, string appDirectory)
+{
+    using JsonDocument document = JsonDocument.Parse(File.ReadAllText(manifestPath));
+    JsonElement root = document.RootElement;
+
+    return new AppManifest(
+        ReadString(root, "id"),
+        ReadString(root, "name"),
+        ReadString(root, "version"),
+        ReadString(root, "entry"),
+        ReadString(root, "kind"),
+        appDirectory);
+}
+
+static string ReadString(JsonElement root, string propertyName)
+{
+    if (root.TryGetProperty(propertyName, out JsonElement property) &&
+        property.ValueKind == JsonValueKind.String)
+    {
+        return property.GetString() ?? string.Empty;
+    }
+
+    return string.Empty;
 }
 
 static async Task PrintServicesAsync(ServiceManagerClient serviceManager)
@@ -144,7 +294,7 @@ static void PrintMounts()
 {
     try
     {
-        foreach (string line in File.ReadLines("/proc/mounts"))
+        foreach (string line in File.ReadLines(SystemPaths.ProcMounts))
         {
             string[] fields = line.Split(' ', StringSplitOptions.RemoveEmptyEntries);
             if (fields.Length >= 3)
@@ -155,7 +305,7 @@ static void PrintMounts()
     }
     catch (Exception ex)
     {
-        Console.WriteLine($"mounts: could not read /proc/mounts: {ex.Message}");
+        Console.WriteLine($"mounts: could not read {SystemPaths.ProcMounts}: {ex.Message}");
     }
 }
 
@@ -163,15 +313,23 @@ static void PrintUptime()
 {
     try
     {
-        string uptime = File.ReadAllText("/proc/uptime").Trim();
+        string uptime = File.ReadAllText(SystemPaths.ProcUptime).Trim();
         string firstField = uptime.Split(' ', StringSplitOptions.RemoveEmptyEntries)[0];
         Console.WriteLine($"{firstField} seconds");
     }
     catch (Exception ex)
     {
-        Console.WriteLine($"uptime: could not read /proc/uptime: {ex.Message}");
+        Console.WriteLine($"uptime: could not read {SystemPaths.ProcUptime}: {ex.Message}");
     }
 }
+
+sealed record AppManifest(
+    string Id,
+    string Name,
+    string Version,
+    string Entry,
+    string Kind,
+    string Directory);
 
 sealed class SerialLogScope : IDisposable
 {

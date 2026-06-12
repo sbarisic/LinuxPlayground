@@ -2,12 +2,13 @@ using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json.Nodes;
+using MyOs;
 using MyOs.Ipc;
 
-using SerialLogScope serialLog = SerialLogScope.TryOpen("/dev/ttyS0");
+using SerialLogScope serialLog = SerialLogScope.TryOpen(SystemPaths.Serial);
 Console.WriteLine($"[ServiceManager] starting pid={Environment.ProcessId}");
 
-foreach (string mountPoint in new[] { "/dev", "/proc", "/sys", "/run", "/tmp" })
+foreach (string mountPoint in new[] { SystemPaths.Dev, SystemPaths.Proc, SystemPaths.Sys, SystemPaths.Run, SystemPaths.Tmp })
 {
     Console.WriteLine(IsMounted(mountPoint)
         ? $"[ServiceManager] confirmed {mountPoint} mounted"
@@ -26,7 +27,7 @@ using PosixSignalRegistration sigterm = PosixSignalRegistration.Create(PosixSign
     shutdown.Cancel();
 });
 
-ServiceSupervisor shell = new("Shell", "/system/Shell", "always", critical: true);
+ServiceSupervisor shell = new("Shell", SystemPaths.Shell, "always", critical: true);
 
 Task ipcServer = IpcServer.RunAsync(
     IpcPaths.ServiceManagerSocket,
@@ -104,7 +105,7 @@ static bool IsMounted(string mountPoint)
 {
     try
     {
-        foreach (string line in File.ReadLines("/proc/mounts"))
+        foreach (string line in File.ReadLines(SystemPaths.ProcMounts))
         {
             string[] fields = line.Split(' ', StringSplitOptions.RemoveEmptyEntries);
             if (fields.Length >= 2 && fields[1] == mountPoint)
@@ -115,7 +116,7 @@ static bool IsMounted(string mountPoint)
     }
     catch (Exception ex)
     {
-        Console.WriteLine($"[ServiceManager] could not read /proc/mounts: {ex.Message}");
+        Console.WriteLine($"[ServiceManager] could not read {SystemPaths.ProcMounts}: {ex.Message}");
     }
 
     return false;

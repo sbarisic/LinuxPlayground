@@ -26,6 +26,7 @@ JOBS=$(nproc)
 KERNEL_IMAGE=build/out/kernel/bzImage
 INITRAMFS=build/out/initramfs.cpio.gz
 KERNEL_WORK_DIR=$HOME/.cache/linuxplayground/kernel
+MEMORY=512M
 ```
 
 You can override any of those values in the environment before running the
@@ -41,7 +42,9 @@ tree or delete it. The build script now uses the WSL-native cache by default.
 
 `build/build-initramfs.sh` also publishes the .NET `ServiceManager` and `Shell`
 as Native AOT executables and copies them into `/system` inside the initramfs.
-The WSL toolchain uses .NET 10 and LLVM `lld` for those static native publishes.
+It publishes the managed `HWorld` app bundle into `/Apps/HWorld.app` and copies
+the runtime libraries needed by the self-contained managed app. The WSL
+toolchain uses .NET 10 and LLVM `lld` for the static native service publishes.
 
 `build/run-qemu.sh` opens QEMU with a VGA window for the interactive shell and
 writes the serial console to `out.txt`. The kernel command line enables both
@@ -76,11 +79,14 @@ Stop QEMU manually with a terminal interrupt for now.
 
 The tiny C `/init` in `src/Init/init.c` stays deliberately small. It proves the
 boot path, mounts the basic runtime filesystems, starts `/system/ServiceManager`,
-and restarts it if it exits.
+reaps any child process that exits, and restarts `ServiceManager` if it exits.
 
 The C# `ServiceManager` is intentionally tiny for now. It prints its PID,
 confirms the runtime mounts from `/proc/mounts`, supervises `/system/Shell`, and
 exposes the first SDK-backed IPC endpoint at `/run/myos/service.sock`.
+
+Shared C# paths live in `MyOs.Core.SystemPaths`, so service, app, IPC, serial,
+and Linux runtime paths have one source of truth before the layout evolves.
 
 The custom shell currently supports:
 
@@ -89,6 +95,8 @@ help
 clear
 echo <text>
 services
+apps
+run <app>
 start <service>
 stop <service>
 restart <service>
@@ -103,3 +111,5 @@ poweroff
 `services`, `start`, `stop`, and `restart` use the shared C# SDK to talk to
 `ServiceManager`; for now `Shell` is the only registered service, and stopping it
 is deliberately protected.
+`apps` lists bundles under `/Apps`, and `run HWorld` launches the first managed
+.NET app bundle.

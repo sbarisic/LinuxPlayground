@@ -1,8 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <ItemGroup>
-    <ProjectReference Include="..\MyOs.Core\MyOs.Core.csproj" />
-    <ProjectReference Include="..\MyOs.Ipc\MyOs.Ipc.csproj" />
-    <ProjectReference Include="..\MyOs.Sdk\MyOs.Sdk.csproj" />
+    <ProjectReference Include="..\..\MyOs.Core\MyOs.Core.csproj" />
+    <ProjectReference Include="..\..\MyOs.Sdk\MyOs.Sdk.csproj" />
   </ItemGroup>
 
   <PropertyGroup>
@@ -10,12 +9,10 @@
     <TargetFramework>net10.0</TargetFramework>
     <RuntimeIdentifier>linux-x64</RuntimeIdentifier>
     <SelfContained>true</SelfContained>
-    <PublishAot>true</PublishAot>
-    <StaticExecutable>true</StaticExecutable>
-    <LinkerFlavor>lld</LinkerFlavor>
+    <PublishAot>false</PublishAot>
     <InvariantGlobalization>true</InvariantGlobalization>
-    <AssemblyName>ServiceManager</AssemblyName>
-    <RootNamespace>MyOs.ServiceManager</RootNamespace>
+    <AssemblyName>HWorld</AssemblyName>
+    <RootNamespace>HWorld</RootNamespace>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
   </PropertyGroup>

@@ -14,6 +14,7 @@ required_commands=(
   openssl
   dotnet
   cpio
+  ldd
   gzip
   xz
   curl
@@ -68,7 +69,7 @@ if ((${#missing[@]} > 0 || ${#missing_packages[@]} > 0)); then
   echo
   echo "Or run apt manually:"
   echo "  sudo apt-get update"
-  echo "  sudo apt-get install -y qemu-system-x86 build-essential bc bison flex clang lld libssl-dev libelf-dev zlib1g-dev dotnet-sdk-10.0 cpio gzip xz-utils curl tar git"
+  echo "  sudo apt-get install -y qemu-system-x86 build-essential bc bison flex clang lld libc-bin libssl-dev libelf-dev zlib1g-dev dotnet-sdk-10.0 cpio gzip xz-utils curl tar git"
   exit 1
 fi
 

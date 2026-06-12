@@ -1,5 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <ItemGroup>
+    <ProjectReference Include="..\MyOs.Core\MyOs.Core.csproj" />
     <ProjectReference Include="..\MyOs.Sdk\MyOs.Sdk.csproj" />
   </ItemGroup>
 

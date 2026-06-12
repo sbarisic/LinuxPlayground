@@ -2,5 +2,5 @@ namespace MyOs.Ipc;
 
 public static class IpcPaths
 {
-    public const string ServiceManagerSocket = "/run/myos/service.sock";
+    public const string ServiceManagerSocket = MyOs.SystemPaths.ServiceSocket;
 }
