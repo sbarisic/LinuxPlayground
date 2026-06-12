@@ -10,3 +10,4 @@ kernel/linux-*/
 *.d
 bin/
 obj/
+out.txt
