@@ -93,4 +93,5 @@ EOF
 
 publish_native_aot "ServiceManager" "${repo_root}/src/MyOs.ServiceManager/MyOs.ServiceManager.csproj"
 publish_native_aot "Shell" "${repo_root}/src/MyOs.Shell/MyOs.Shell.csproj"
+publish_native_aot "devd" "${repo_root}/src/MyOs.DeviceManager/MyOs.DeviceManager.csproj"
 publish_managed_app "HWorld" "${repo_root}/src/Apps/HWorld/HWorld.csproj"

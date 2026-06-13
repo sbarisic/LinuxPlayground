@@ -40,9 +40,10 @@ and Windows-backed filesystems can collapse those names.
 If you previously tried to build under `kernel/source` on `/mnt/c`, ignore that
 tree or delete it. The build script now uses the WSL-native cache by default.
 
-`build/build-initramfs.sh` also publishes the .NET `ServiceManager` and `Shell`
-as Native AOT executables and copies them into `/system` inside the initramfs.
-It publishes the managed `HWorld` app bundle into `/Apps/HWorld.app` and copies
+`build/build-initramfs.sh` also publishes the .NET `ServiceManager`, `Shell`,
+and `devd` as Native AOT executables and copies them into `/system` inside the
+initramfs. It generates the first service manifests under `/system/services`,
+publishes the managed `HWorld` app bundle into `/Apps/HWorld.app`, and copies
 the runtime libraries needed by the self-contained managed app. The WSL
 toolchain uses .NET 10 and LLVM `lld` for the static native service publishes.
 
@@ -66,24 +67,35 @@ LinuxPlayground init starting
 [ServiceManager] confirmed /sys mounted
 [ServiceManager] confirmed /run mounted
 [ServiceManager] confirmed /tmp mounted
+[ServiceManager] loaded 2 service manifest(s) from /system/services
 [ServiceManager] listening on /run/myos/service.sock
 [ServiceManager] idle
+[ServiceManager] starting /system/devd
+[devd] starting pid=...
+[devd] listening on /run/myos/device.sock
 [ServiceManager] starting /system/Shell
 [Shell] starting pid=...
 myos>
 ```
 
-Stop QEMU manually with a terminal interrupt for now.
+Use `reboot` or `poweroff` inside the shell for clean shutdown control.
 
 ## Current Scope
 
 The tiny C `/init` in `src/Init/init.c` stays deliberately small. It proves the
 boot path, mounts the basic runtime filesystems, starts `/system/ServiceManager`,
-reaps any child process that exits, and restarts `ServiceManager` if it exits.
+reaps any child process that exits, restarts `ServiceManager` if it exits, and
+performs the final reboot or poweroff syscall when ServiceManager signals PID 1.
+A tiny static `/system/initctl` helper lets managed services send that signal
+without relying on dynamic native loading from Native AOT.
 
 The C# `ServiceManager` is intentionally tiny for now. It prints its PID,
-confirms the runtime mounts from `/proc/mounts`, supervises `/system/Shell`, and
-exposes the first SDK-backed IPC endpoint at `/run/myos/service.sock`.
+confirms the runtime mounts from `/proc/mounts`, loads JSON service manifests
+from `/system/services`, supervises `devd` and `Shell`, launches app bundles,
+and exposes the first SDK-backed IPC endpoint at `/run/myos/service.sock`.
+
+The first device manager, `devd`, enumerates `/sys/class/*/*` and exposes a
+read-only device list at `/run/myos/device.sock`.
 
 Shared C# paths live in `MyOs.Core.SystemPaths`, so service, app, IPC, serial,
 and Linux runtime paths have one source of truth before the layout evolves.
@@ -94,6 +106,7 @@ The custom shell currently supports:
 help
 clear
 echo <text>
+status
 services
 apps
 run <app>
@@ -101,15 +114,16 @@ start <service>
 stop <service>
 restart <service>
 mounts
+devices
 pid
 uptime
 reboot
 poweroff
 ```
 
-`reboot` and `poweroff` are stubs until `/init` grows a shutdown control path.
-`services`, `start`, `stop`, and `restart` use the shared C# SDK to talk to
-`ServiceManager`; for now `Shell` is the only registered service, and stopping it
-is deliberately protected.
-`apps` lists bundles under `/Apps`, and `run HWorld` launches the first managed
-.NET app bundle.
+`status`, `services`, `start`, `stop`, `restart`, `apps`, `run`, `reboot`, and
+`poweroff` use the shared C# SDK to talk to `ServiceManager`. `devices` talks to
+`devd` through the SDK. `Shell` remains protected from manual `stop`, but
+ServiceManager can stop it during ordered shutdown. `apps` lists bundles under
+`/Apps`, and `run HWorld` asks ServiceManager to launch the first managed .NET
+app bundle as a ServiceManager child process.

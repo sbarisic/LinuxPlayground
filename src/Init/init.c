@@ -2,11 +2,14 @@
 
 #include <errno.h>
 #include <fcntl.h>
+#include <linux/reboot.h>
+#include <signal.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/mount.h>
+#include <sys/reboot.h>
 #include <sys/stat.h>
 #include <sys/sysmacros.h>
 #include <sys/wait.h>
@@ -22,6 +25,13 @@
 #define SERVICE_MANAGER_PATH "/system/ServiceManager"
 
 static int serial_fd = -1;
+static volatile sig_atomic_t shutdown_command = 0;
+
+enum {
+    SHUTDOWN_NONE = 0,
+    SHUTDOWN_REBOOT = 1,
+    SHUTDOWN_POWEROFF = 2
+};
 
 static void console_write(const char *format, ...)
 {
@@ -78,6 +88,57 @@ static void setup_console(void)
 
     setvbuf(stdout, NULL, _IONBF, 0);
     setvbuf(stderr, NULL, _IONBF, 0);
+}
+
+static void handle_shutdown_signal(int signal_number)
+{
+    if (signal_number == SIGUSR1) {
+        shutdown_command = SHUTDOWN_REBOOT;
+        return;
+    }
+
+    if (signal_number == SIGUSR2) {
+        shutdown_command = SHUTDOWN_POWEROFF;
+    }
+}
+
+static void setup_shutdown_signals(void)
+{
+    struct sigaction action;
+    memset(&action, 0, sizeof(action));
+    action.sa_handler = handle_shutdown_signal;
+    sigemptyset(&action.sa_mask);
+
+    if (sigaction(SIGUSR1, &action, NULL) != 0) {
+        console_write("[init] sigaction SIGUSR1 failed: %s\n", strerror(errno));
+    }
+
+    if (sigaction(SIGUSR2, &action, NULL) != 0) {
+        console_write("[init] sigaction SIGUSR2 failed: %s\n", strerror(errno));
+    }
+}
+
+static void perform_shutdown_if_requested(void)
+{
+    int command = shutdown_command;
+    if (command == SHUTDOWN_NONE) {
+        return;
+    }
+
+    shutdown_command = SHUTDOWN_NONE;
+
+    if (command == SHUTDOWN_POWEROFF) {
+        console_write("[init] poweroff requested\n");
+        sync();
+        reboot(LINUX_REBOOT_CMD_POWER_OFF);
+        console_write("[init] poweroff failed: %s\n", strerror(errno));
+        return;
+    }
+
+    console_write("[init] reboot requested\n");
+    sync();
+    reboot(LINUX_REBOOT_CMD_RESTART);
+    console_write("[init] reboot failed: %s\n", strerror(errno));
 }
 
 static void mount_filesystem(const char *label, const char *source, const char *target, const char *type, unsigned long flags)
@@ -151,6 +212,8 @@ static void supervise_service_manager(void)
     pid_t service_manager_pid = -1;
 
     for (;;) {
+        perform_shutdown_if_requested();
+
         if (service_manager_pid < 0) {
             service_manager_pid = start_service_manager();
         }
@@ -163,6 +226,7 @@ static void supervise_service_manager(void)
         int status = 0;
         pid_t waited = waitpid(-1, &status, 0);
         if (waited < 0 && errno == EINTR) {
+            perform_shutdown_if_requested();
             continue;
         }
 
@@ -190,6 +254,7 @@ static void supervise_service_manager(void)
 int main(void)
 {
     setup_console();
+    setup_shutdown_signals();
 
     console_write("LinuxPlayground init starting\n");
 

@@ -2,6 +2,7 @@
   <ItemGroup>
     <ProjectReference Include="..\MyOs.Core\MyOs.Core.csproj" />
     <ProjectReference Include="..\MyOs.Ipc\MyOs.Ipc.csproj" />
+    <ProjectReference Include="..\MyOs.Services\MyOs.Services.csproj" />
   </ItemGroup>
 
   <PropertyGroup>

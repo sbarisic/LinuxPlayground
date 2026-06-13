@@ -2,7 +2,6 @@
   <ItemGroup>
     <ProjectReference Include="..\MyOs.Core\MyOs.Core.csproj" />
     <ProjectReference Include="..\MyOs.Ipc\MyOs.Ipc.csproj" />
-    <ProjectReference Include="..\MyOs.Services\MyOs.Services.csproj" />
   </ItemGroup>
 
   <PropertyGroup>
@@ -14,8 +13,8 @@
     <StaticExecutable>true</StaticExecutable>
     <LinkerFlavor>lld</LinkerFlavor>
     <InvariantGlobalization>true</InvariantGlobalization>
-    <AssemblyName>ServiceManager</AssemblyName>
-    <RootNamespace>MyOs.ServiceManager</RootNamespace>
+    <AssemblyName>devd</AssemblyName>
+    <RootNamespace>MyOs.DeviceManager</RootNamespace>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
   </PropertyGroup>

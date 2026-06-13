@@ -93,6 +93,7 @@ Possible process tree:
 │   ├── MyOs.Core/
 │   ├── MyOs.Ipc/
 │   ├── MyOs.Sdk/
+│   ├── MyOs.Services/
 │   ├── MyOs.ServiceManager/
 │   ├── MyOs.Shell/
 │   ├── MyOs.Bus/
@@ -163,7 +164,8 @@ Required behavior:
 * [x] Reap zombie processes.
 * [x] Reap orphaned child processes while `ServiceManager` is alive.
 * [x] Restart `ServiceManager` if it exits unexpectedly.
-* [ ] Handle shutdown/reboot commands later.
+* [x] Handle shutdown/reboot commands later.
+* [x] Add tiny static `/system/initctl` helper for signaling PID 1.
 
 Do not make `/init` into the whole OS.
 
@@ -172,12 +174,13 @@ Do not make `/init` into the whole OS.
 * [x] Create .NET solution.
 * [x] Create common runtime library project: `MyOs.Core`.
 * [x] Add shared system path constants.
-* [ ] Create service framework library: `MyOs.Services`.
+* [x] Create service framework library: `MyOs.Services`.
 * [x] Create IPC library: `MyOs.Ipc`.
 * [x] Create shared SDK project: `MyOs.Sdk`.
 * [x] Put native Linux/syscall helper area under `MyOs.Sdk`.
 * [x] Create service manager project: `MyOs.ServiceManager`.
 * [x] Create shell project: `MyOs.Shell`.
+* [x] Create first device manager project: `MyOs.DeviceManager`.
 * [x] Create first managed app project: `HWorld`.
 * [x] Configure Native AOT publishing for early services.
 * [x] Configure self-contained publishing for managed apps.
@@ -215,16 +218,18 @@ Responsibilities:
 * [x] Confirm `/dev`, `/proc`, `/sys`, `/run`, and `/tmp` are mounted.
 * [x] Start `/system/Shell`.
 * [x] Restart `Shell` if it exits unexpectedly.
-* [ ] Read service definitions.
-* [ ] Start configured services.
+* [x] Read service definitions.
+* [x] Start configured services.
 * [x] Track child process IDs.
-* [ ] Restart critical services.
+* [x] Restart critical services.
 * [ ] Capture stdout/stderr.
 * [x] Provide service status API.
 * [x] Provide start/stop/restart API.
-* [ ] Handle ordered shutdown.
+* [x] Provide app list/run API.
+* [x] Launch apps as ServiceManager child processes.
+* [x] Handle ordered shutdown.
 * [ ] Support dependencies between services later.
-* [ ] Support service manifests later.
+* [x] Support service manifests later.
 
 Example service manifest:
 
@@ -246,6 +251,7 @@ Use Unix domain sockets as the first IPC mechanism.
 * [x] Use JSON-lines protocol at first.
 * [x] Add request/response IDs.
 * [x] Add error response format.
+* [x] Add app list/run commands over IPC.
 * [ ] Add service discovery later.
 * [ ] Add binary protocol later if needed.
 * [ ] Add peer credential checking.
@@ -284,7 +290,7 @@ Responsibilities:
   * [x] `help`
   * [x] `clear`
   * [x] `echo`
-  * [ ] `status`
+  * [x] `status`
   * [x] `apps`
   * [x] `run <app>`
   * [x] `services`
@@ -292,7 +298,7 @@ Responsibilities:
   * [x] `stop <service>`
   * [x] `restart <service>`
   * [x] `mounts`
-  * [ ] `devices`
+  * [x] `devices`
   * [x] `pid`
   * [x] `uptime`
   * [x] `reboot`
@@ -307,10 +313,10 @@ Create `devd`.
 
 Responsibilities:
 
-* [ ] Enumerate `/sys`.
+* [x] Enumerate `/sys`.
 * [ ] Watch kernel uevents.
-* [ ] Track devices.
-* [ ] Expose device list over IPC.
+* [x] Track devices.
+* [x] Expose device list over IPC.
 * [ ] Expose block devices.
 * [ ] Expose input devices.
 * [ ] Expose network devices.
@@ -477,6 +483,7 @@ Early app assumptions:
 * [x] The first app can use `bin/<AppName>` as its entry point.
 * [x] Add first hello-world app bundle: `/Apps/HWorld.app/`.
 * [x] Add shell app launcher for `run HWorld`.
+* [x] Move app launch behind ServiceManager IPC.
 
 Possible permissions:
 
@@ -509,6 +516,7 @@ SDK responsibilities:
 
 * [x] Hide raw socket IPC.
 * [x] Provide typed service clients.
+* [x] Provide typed app list/run client.
 * [x] Provide a native Linux/syscall helper area for internal SDK use.
 * [ ] Provide logging API.
 * [ ] Provide graphics API.
@@ -656,25 +664,26 @@ GPL-2.0-only
 * [x] Custom shell starts.
 * [x] User can type commands.
 * [x] Shell can query service status.
-* [ ] Shell can reboot/poweroff.
+* [x] Shell can reboot/poweroff.
 
 ### Milestone 5: Basic IPC
 
 * [x] Unix domain socket server works.
 * [x] Unix domain socket client works.
 * [x] Request/response protocol works.
-* [ ] Multiple services can communicate.
+* [x] Multiple services can communicate.
 
 ### Milestone 6: First App Bundle
 
 * [x] `/Apps/HWorld.app` is packaged.
-* [x] Shell can list app bundles.
-* [x] Shell can run `HWorld`.
+* [x] Shell can list app bundles through IPC.
+* [x] Shell can request `HWorld` launch through IPC.
+* [x] ServiceManager launches app processes.
 * [x] Managed app can use the SDK.
 
 ### Milestone 7: Basic Devices
 
-* [ ] Device manager can list `/sys`.
+* [x] Device manager can list `/sys`.
 * [ ] Input service can read keyboard.
 * [ ] Storage service can list block devices.
 * [ ] Network service can list network interfaces.
@@ -729,7 +738,8 @@ run /init
 mount basic filesystems
 start .NET service manager
 start custom shell
-list and run first app bundle
+list and run first app bundle through ServiceManager IPC
+list devices through devd
 accept simple commands
 reboot cleanly
 ```

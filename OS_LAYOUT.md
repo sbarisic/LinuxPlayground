@@ -7,8 +7,9 @@ filesystems, but LinuxPlayground should expose a smaller, opinionated operating
 system surface.
 
 The current boot milestone needs `/init`, `/dev`, `/proc`, `/sys`, `/run`,
-`/tmp`, `/system/ServiceManager`, `/system/Shell`, and `/Apps/HWorld.app`. The
-rest of this layout describes where the system should grow.
+`/tmp`, `/system/ServiceManager`, `/system/Shell`, `/system/devd`,
+`/system/services`, and `/Apps/HWorld.app`. The rest of this layout describes
+where the system should grow.
 
 ## Design Idea
 
@@ -70,6 +71,7 @@ Responsibilities:
 * Start `/system/ServiceManager`.
 * Reap any child process that exits.
 * Restart the service manager if it exits.
+* Perform the final reboot or poweroff syscall when ServiceManager signals it.
 
 `/init` should stay tiny. It is not the shell, the service manager, the device
 manager, or the whole OS.
@@ -85,6 +87,7 @@ Expected contents:
 ```text
 /system/
 ├── ServiceManager
+├── initctl
 ├── Shell
 ├── busd
 ├── devd
@@ -99,9 +102,9 @@ Expected contents:
 ```
 
 Early builds place service executables directly in `/system`; currently these
-are the Native AOT `ServiceManager` and `Shell`. As the OS grows,
-`/system/services` and `/system/manifests` can hold service definitions,
-dependency metadata, restart policy, and permissions.
+are the Native AOT `ServiceManager`, `Shell`, and `devd`. The current
+initramfs also carries JSON service manifests in `/system/services`, which
+define each service executable, restart policy, and critical flag.
 
 User apps should not write here. Treat it as read-only at runtime once the
 system is mature.
@@ -154,6 +157,7 @@ Expected contents:
 /run/
 └── myos/
     ├── service.sock
+    ├── device.sock
     ├── bus.sock
     ├── input.sock
     ├── gfx.sock
@@ -300,7 +304,7 @@ The filesystem is intentionally service-owned:
 /system        -> build system and OS updates
 /config        -> settings service / service manager
 /run/myos      -> ServiceManager and service IPC endpoints
-/Apps          -> app installer / app manager
+/Apps          -> ServiceManager app launcher for now, app manager later
 /Users         -> shell, GUI, apps, storage service
 /Volumes       -> storaged
 /dev           -> kernel devtmpfs, mediated by devd and service daemons
@@ -346,11 +350,17 @@ The current initramfs skeleton contains:
 ├── sys/
 ├── run/
 │   └── myos/
-│       └── service.sock
+│       ├── service.sock
+│       └── device.sock
 ├── tmp/
 └── system/
     ├── ServiceManager
-    └── Shell
+    ├── initctl
+    ├── Shell
+    ├── devd
+    └── services/
+        ├── 01-devd.service.json
+        └── 10-Shell.service.json
 ```
 
 That is enough to prove:
@@ -364,10 +374,18 @@ That is enough to prove:
 * Basic Linux virtual filesystems can be mounted.
 * The C# Native AOT service manager can start from `/system/ServiceManager`.
 * `/init` can supervise the service manager as a child process.
+* `/init` can perform clean reboot and poweroff when ServiceManager requests it.
+* `/system/initctl` can signal PID 1 for reboot and poweroff requests.
+* `ServiceManager` can load service manifests and supervise multiple child
+  services.
 * `ServiceManager` can supervise an interactive shell as a child process.
+* `devd` can expose a read-only device list from `/sys/class`.
 * The shell can query `ServiceManager` through the shared SDK and
   `/run/myos/service.sock`.
-* The shell can list `/Apps` bundles and launch the managed `HWorld` app.
+* The shell can query `devd` through the shared SDK and `/run/myos/device.sock`.
+* `ServiceManager` can list `/Apps` bundles and launch managed apps.
+* The shell can list and launch apps through the shared SDK instead of owning
+  app processes directly.
 * Shared managed path constants exist in `MyOs.Core.SystemPaths`.
 
 Everything else should be added only when a real service or user workflow needs

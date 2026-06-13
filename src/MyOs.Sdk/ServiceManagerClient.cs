@@ -55,6 +55,55 @@ public sealed class ServiceManagerClient
     public Task<ServiceOperationResult> RestartServiceAsync(string name, CancellationToken cancellationToken = default) =>
         SendServiceOperationAsync("service.restart", name, cancellationToken);
 
+    public async Task<SystemStatusInfo> GetSystemStatusAsync(CancellationToken cancellationToken = default)
+    {
+        IpcResponse response = await IpcClient.SendAsync(_socketPath, "system.status", new JsonObject(), cancellationToken);
+        if (!response.Ok)
+        {
+            throw new InvalidOperationException(response.Error ?? "system.status failed");
+        }
+
+        JsonObject? data = response.Data as JsonObject;
+        List<MountStatusInfo> mounts = new();
+        if (data?["mounts"] is JsonArray mountArray)
+        {
+            foreach (JsonNode? item in mountArray)
+            {
+                if (item is not JsonObject mount)
+                {
+                    continue;
+                }
+
+                mounts.Add(new MountStatusInfo(
+                    ReadString(mount, "path"),
+                    ReadBool(mount, "mounted")));
+            }
+        }
+
+        return new SystemStatusInfo(
+            ReadDouble(data, "uptimeSeconds"),
+            ReadInt(data, "totalServices"),
+            ReadInt(data, "runningServices"),
+            mounts);
+    }
+
+    public async Task<ServiceOperationResult> RequestShutdownAsync(
+        ShutdownAction action,
+        CancellationToken cancellationToken = default)
+    {
+        JsonObject args = new()
+        {
+            ["action"] = action == ShutdownAction.PowerOff ? "poweroff" : "reboot",
+        };
+
+        IpcResponse response = await IpcClient.SendAsync(_socketPath, "system.shutdown", args, cancellationToken);
+        string message = ReadNullableString(response.Data as JsonObject, "message")
+            ?? response.Error
+            ?? (response.Ok ? "shutdown requested" : "shutdown request failed");
+
+        return new ServiceOperationResult(response.Ok, message);
+    }
+
     private async Task<ServiceOperationResult> SendServiceOperationAsync(
         string command,
         string name,
@@ -85,6 +134,16 @@ public sealed class ServiceManagerClient
         obj.TryGetPropertyValue(name, out JsonNode? node) && node is not null
             ? node.GetValue<int>()
             : null;
+
+    private static int ReadInt(JsonObject? obj, string name) =>
+        obj is not null && obj.TryGetPropertyValue(name, out JsonNode? node) && node is not null
+            ? node.GetValue<int>()
+            : 0;
+
+    private static double ReadDouble(JsonObject? obj, string name) =>
+        obj is not null && obj.TryGetPropertyValue(name, out JsonNode? node) && node is not null
+            ? node.GetValue<double>()
+            : 0;
 
     private static bool ReadBool(JsonObject obj, string name) =>
         obj.TryGetPropertyValue(name, out JsonNode? node) && node is not null && node.GetValue<bool>();

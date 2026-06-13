@@ -7,8 +7,10 @@ repo_root="$(cd -- "${script_dir}/.." && pwd)"
 out_root="${repo_root}/build/out"
 initramfs_root="${out_root}/initramfs-root"
 init_binary="${out_root}/init"
+initctl_binary="${out_root}/initctl"
 service_manager_binary="${out_root}/system/ServiceManager"
 shell_binary="${out_root}/system/Shell"
+device_manager_binary="${out_root}/system/devd"
 apps_root="${out_root}/Apps"
 initramfs_image="${INITRAMFS:-${out_root}/initramfs.cpio.gz}"
 initramfs_tmp="${initramfs_image}.tmp"
@@ -23,6 +25,7 @@ mkdir -p \
   "${initramfs_root}/run" \
   "${initramfs_root}/tmp" \
   "${initramfs_root}/system" \
+  "${initramfs_root}/system/services" \
   "${initramfs_root}/Apps"
 
 echo "Building static /init..."
@@ -36,18 +39,51 @@ gcc \
   -o "${init_binary}" \
   "${repo_root}/src/Init/init.c"
 
+echo "Building static /system/initctl..."
+gcc \
+  -std=c11 \
+  -Wall \
+  -Wextra \
+  -Werror \
+  -O2 \
+  -static \
+  -o "${initctl_binary}" \
+  "${repo_root}/src/Init/initctl.c"
+
 echo "Building ServiceManager..."
 bash "${script_dir}/build-dotnet.sh"
 
 cp "${init_binary}" "${initramfs_root}/init"
+cp "${initctl_binary}" "${initramfs_root}/system/initctl"
 cp "${service_manager_binary}" "${initramfs_root}/system/ServiceManager"
 cp "${shell_binary}" "${initramfs_root}/system/Shell"
+cp "${device_manager_binary}" "${initramfs_root}/system/devd"
 cp -a "${apps_root}/." "${initramfs_root}/Apps/"
 chmod 0755 "${initramfs_root}/init"
+chmod 0755 "${initramfs_root}/system/initctl"
 chmod 0755 "${initramfs_root}/system/ServiceManager"
 chmod 0755 "${initramfs_root}/system/Shell"
+chmod 0755 "${initramfs_root}/system/devd"
 chmod 0755 "${initramfs_root}"
-chmod 0755 "${initramfs_root}/dev" "${initramfs_root}/proc" "${initramfs_root}/sys" "${initramfs_root}/run" "${initramfs_root}/tmp" "${initramfs_root}/system" "${initramfs_root}/Apps"
+chmod 0755 "${initramfs_root}/dev" "${initramfs_root}/proc" "${initramfs_root}/sys" "${initramfs_root}/run" "${initramfs_root}/tmp" "${initramfs_root}/system" "${initramfs_root}/system/services" "${initramfs_root}/Apps"
+
+cat > "${initramfs_root}/system/services/01-devd.service.json" <<EOF
+{
+  "name": "devd",
+  "exec": "/system/devd",
+  "restart": "always",
+  "critical": true
+}
+EOF
+
+cat > "${initramfs_root}/system/services/10-Shell.service.json" <<EOF
+{
+  "name": "Shell",
+  "exec": "/system/Shell",
+  "restart": "always",
+  "critical": true
+}
+EOF
 
 copy_runtime_dependency() {
   local dependency="$1"

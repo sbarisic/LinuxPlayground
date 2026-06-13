@@ -1,11 +1,11 @@
-using System.Diagnostics;
 using System.Text;
-using System.Text.Json;
 using MyOs;
 using MyOs.Sdk;
 
 using SerialLogScope serialLog = SerialLogScope.TryOpen(SystemPaths.Serial);
 ServiceManagerClient serviceManager = new();
+DeviceManagerClient deviceManager = new();
+AppManagerClient appManager = new();
 
 Console.WriteLine($"[Shell] starting pid={Environment.ProcessId}");
 Console.WriteLine("Type 'help' for commands.");
@@ -20,10 +20,14 @@ while (true)
         return;
     }
 
-    await RunCommandAsync(line.Trim(), serviceManager);
+    await RunCommandAsync(line.Trim(), serviceManager, deviceManager, appManager);
 }
 
-static async Task RunCommandAsync(string line, ServiceManagerClient serviceManager)
+static async Task RunCommandAsync(
+    string line,
+    ServiceManagerClient serviceManager,
+    DeviceManagerClient deviceManager,
+    AppManagerClient appManager)
 {
     if (line.Length == 0)
     {
@@ -55,14 +59,17 @@ static async Task RunCommandAsync(string line, ServiceManagerClient serviceManag
         case "echo":
             Console.WriteLine(arguments);
             break;
+        case "status":
+            await PrintStatusAsync(serviceManager, appManager);
+            break;
         case "services":
             await PrintServicesAsync(serviceManager);
             break;
         case "apps":
-            PrintApps();
+            await PrintAppsAsync(appManager);
             break;
         case "run":
-            await RunAppAsync(arguments);
+            await RunAppAsync(arguments, appManager);
             break;
         case "start":
             await RunServiceOperationAsync("start", arguments, serviceManager.StartServiceAsync);
@@ -76,6 +83,9 @@ static async Task RunCommandAsync(string line, ServiceManagerClient serviceManag
         case "mounts":
             PrintMounts();
             break;
+        case "devices":
+            await PrintDevicesAsync(deviceManager);
+            break;
         case "pid":
             Console.WriteLine(Environment.ProcessId);
             break;
@@ -83,8 +93,10 @@ static async Task RunCommandAsync(string line, ServiceManagerClient serviceManag
             PrintUptime();
             break;
         case "reboot":
+            await RequestShutdownAsync("reboot", ShutdownAction.Reboot, serviceManager);
+            break;
         case "poweroff":
-            Console.WriteLine($"{command}: shutdown control is not implemented yet");
+            await RequestShutdownAsync("poweroff", ShutdownAction.PowerOff, serviceManager);
             break;
         default:
             Console.WriteLine($"{command}: unknown command. Type 'help' for commands.");
@@ -98,6 +110,7 @@ static void PrintHelp()
     Console.WriteLine("  help               Show this help");
     Console.WriteLine("  clear              Clear the console");
     Console.WriteLine("  echo <text>        Print text");
+    Console.WriteLine("  status             Show system status");
     Console.WriteLine("  services           Show services");
     Console.WriteLine("  apps               Show installed apps");
     Console.WriteLine("  run <app>          Run an app");
@@ -105,17 +118,18 @@ static void PrintHelp()
     Console.WriteLine("  stop <service>     Stop a service");
     Console.WriteLine("  restart <service>  Restart a service");
     Console.WriteLine("  mounts             Show mounted filesystems");
+    Console.WriteLine("  devices            Show devices");
     Console.WriteLine("  pid                Show shell process ID");
     Console.WriteLine("  uptime             Show system uptime");
-    Console.WriteLine("  reboot             Stub reboot command");
-    Console.WriteLine("  poweroff           Stub poweroff command");
+    Console.WriteLine("  reboot             Reboot the system");
+    Console.WriteLine("  poweroff           Power off the system");
 }
 
-static void PrintApps()
+static async Task PrintAppsAsync(AppManagerClient appManager)
 {
     try
     {
-        IReadOnlyList<AppManifest> apps = LoadApps();
+        IReadOnlyList<AppInfo> apps = await appManager.ListAppsAsync();
         if (apps.Count == 0)
         {
             Console.WriteLine("No apps installed.");
@@ -123,7 +137,7 @@ static void PrintApps()
         }
 
         Console.WriteLine($"{"NAME",-14} {"ID",-18} {"VERSION",-8} KIND");
-        foreach (AppManifest app in apps)
+        foreach (AppInfo app in apps)
         {
             Console.WriteLine($"{app.Name,-14} {app.Id,-18} {app.Version,-8} {app.Kind}");
         }
@@ -134,7 +148,7 @@ static void PrintApps()
     }
 }
 
-static async Task RunAppAsync(string appName)
+static async Task RunAppAsync(string appName, AppManagerClient appManager)
 {
     if (string.IsNullOrWhiteSpace(appName))
     {
@@ -142,112 +156,37 @@ static async Task RunAppAsync(string appName)
         return;
     }
 
-    if (appName.Contains('/') || appName.Contains('\\'))
-    {
-        Console.WriteLine("run: app names cannot contain path separators");
-        return;
-    }
-
-    string appDirectory = Path.Combine(SystemPaths.Apps, $"{appName}.app");
-    string manifestPath = Path.Combine(appDirectory, "manifest.json");
-    if (!File.Exists(manifestPath))
-    {
-        Console.WriteLine($"run: app not found: {appName}. Type 'apps' to list apps.");
-        return;
-    }
-
-    AppManifest manifest;
     try
     {
-        manifest = ReadManifest(manifestPath, appDirectory);
+        AppRunResult result = await appManager.RunAppAsync(appName);
+        Console.WriteLine(result.Success ? result.Message : $"run: {result.Message}. Type 'apps' to list apps.");
     }
     catch (Exception ex)
     {
-        Console.WriteLine($"run: could not read {appName} manifest: {ex.Message}");
-        return;
+        Console.WriteLine($"run: could not contact ServiceManager: {ex.Message}");
     }
+}
 
-    string executable = Path.Combine(appDirectory, manifest.Entry);
-    if (!File.Exists(executable))
-    {
-        Console.WriteLine($"run: app entry not found: {manifest.Entry}");
-        return;
-    }
-
-    using Process app = new()
-    {
-        StartInfo = new ProcessStartInfo
-        {
-            FileName = executable,
-            WorkingDirectory = appDirectory,
-            UseShellExecute = false,
-        },
-    };
-
+static async Task PrintStatusAsync(ServiceManagerClient serviceManager, AppManagerClient appManager)
+{
     try
     {
-        app.Start();
-        await app.WaitForExitAsync();
-        Console.WriteLine($"{manifest.Name} exited with status {app.ExitCode}");
+        SystemStatusInfo status = await serviceManager.GetSystemStatusAsync();
+        IReadOnlyList<AppInfo> apps = await appManager.ListAppsAsync();
+
+        Console.WriteLine($"uptime: {status.UptimeSeconds:0.00} seconds");
+        Console.WriteLine($"services: {status.RunningServices}/{status.TotalServices} running");
+        Console.WriteLine($"apps: {apps.Count}");
+        Console.WriteLine("mounts:");
+        foreach (MountStatusInfo mount in status.Mounts)
+        {
+            Console.WriteLine($"  {mount.Path,-8} {(mount.Mounted ? "mounted" : "missing")}");
+        }
     }
     catch (Exception ex)
     {
-        Console.WriteLine($"run: failed to start {manifest.Name}: {ex.Message}");
+        Console.WriteLine($"status: could not contact ServiceManager: {ex.Message}");
     }
-}
-
-static IReadOnlyList<AppManifest> LoadApps()
-{
-    List<AppManifest> apps = new();
-    if (!Directory.Exists(SystemPaths.Apps))
-    {
-        return apps;
-    }
-
-    foreach (string manifestPath in Directory.EnumerateFiles(SystemPaths.Apps, "manifest.json", SearchOption.AllDirectories))
-    {
-        string? appDirectory = Path.GetDirectoryName(manifestPath);
-        if (appDirectory is null || !appDirectory.EndsWith(".app", StringComparison.Ordinal))
-        {
-            continue;
-        }
-
-        try
-        {
-            apps.Add(ReadManifest(manifestPath, appDirectory));
-        }
-        catch
-        {
-        }
-    }
-
-    apps.Sort((left, right) => string.Compare(left.Name, right.Name, StringComparison.OrdinalIgnoreCase));
-    return apps;
-}
-
-static AppManifest ReadManifest(string manifestPath, string appDirectory)
-{
-    using JsonDocument document = JsonDocument.Parse(File.ReadAllText(manifestPath));
-    JsonElement root = document.RootElement;
-
-    return new AppManifest(
-        ReadString(root, "id"),
-        ReadString(root, "name"),
-        ReadString(root, "version"),
-        ReadString(root, "entry"),
-        ReadString(root, "kind"),
-        appDirectory);
-}
-
-static string ReadString(JsonElement root, string propertyName)
-{
-    if (root.TryGetProperty(propertyName, out JsonElement property) &&
-        property.ValueKind == JsonValueKind.String)
-    {
-        return property.GetString() ?? string.Empty;
-    }
-
-    return string.Empty;
 }
 
 static async Task PrintServicesAsync(ServiceManagerClient serviceManager)
@@ -268,6 +207,29 @@ static async Task PrintServicesAsync(ServiceManagerClient serviceManager)
     }
 }
 
+static async Task PrintDevicesAsync(DeviceManagerClient deviceManager)
+{
+    try
+    {
+        IReadOnlyList<DeviceInfo> devices = await deviceManager.ListDevicesAsync();
+        if (devices.Count == 0)
+        {
+            Console.WriteLine("No devices found.");
+            return;
+        }
+
+        Console.WriteLine($"{"CLASS",-14} {"NAME",-22} {"DEV",-8} SYSPATH");
+        foreach (DeviceInfo device in devices)
+        {
+            Console.WriteLine($"{device.Class,-14} {device.Name,-22} {device.Dev ?? "-",-8} {device.SysPath}");
+        }
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"devices: could not contact devd: {ex.Message}");
+    }
+}
+
 static async Task RunServiceOperationAsync(
     string command,
     string serviceName,
@@ -282,6 +244,22 @@ static async Task RunServiceOperationAsync(
     try
     {
         ServiceOperationResult result = await operation(serviceName, CancellationToken.None);
+        Console.WriteLine(result.Success ? result.Message : $"{command}: {result.Message}");
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"{command}: could not contact ServiceManager: {ex.Message}");
+    }
+}
+
+static async Task RequestShutdownAsync(
+    string command,
+    ShutdownAction action,
+    ServiceManagerClient serviceManager)
+{
+    try
+    {
+        ServiceOperationResult result = await serviceManager.RequestShutdownAsync(action);
         Console.WriteLine(result.Success ? result.Message : $"{command}: {result.Message}");
     }
     catch (Exception ex)
@@ -322,14 +300,6 @@ static void PrintUptime()
         Console.WriteLine($"uptime: could not read {SystemPaths.ProcUptime}: {ex.Message}");
     }
 }
-
-sealed record AppManifest(
-    string Id,
-    string Name,
-    string Version,
-    string Entry,
-    string Kind,
-    string Directory);
 
 sealed class SerialLogScope : IDisposable
 {
