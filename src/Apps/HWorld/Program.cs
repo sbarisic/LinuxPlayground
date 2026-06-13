@@ -1,15 +1,23 @@
 using MyOs.Sdk;
 
-Console.WriteLine("Hello from HWorld.");
-Console.WriteLine($"HWorld pid={Environment.ProcessId}");
+namespace MyOs.Apps.HWorld;
 
-try
+internal static class Program
 {
-    ServiceManagerClient serviceManager = new();
-    IReadOnlyList<ServiceInfo> services = await serviceManager.ListServicesAsync();
-    Console.WriteLine($"HWorld sees {services.Count} service(s).");
-}
-catch (Exception ex)
-{
-    Console.WriteLine($"HWorld could not query services: {ex.Message}");
+    private static async Task Main()
+    {
+        Console.WriteLine("Hello from HWorld.");
+        Console.WriteLine($"HWorld pid={Environment.ProcessId}");
+
+        try
+        {
+            ServiceManagerClient serviceManager = new();
+            IReadOnlyList<ServiceInfo> services = await serviceManager.ListServicesAsync();
+            Console.WriteLine($"HWorld sees {services.Count} service(s).");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"HWorld could not query services: {ex.Message}");
+        }
+    }
 }

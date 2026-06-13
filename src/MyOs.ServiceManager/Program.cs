@@ -8,261 +8,269 @@ using MyOs;
 using MyOs.Ipc;
 using MyOs.Services;
 
-using SerialLogScope serialLog = SerialLogScope.TryOpen(SystemPaths.Serial);
-Console.WriteLine($"[ServiceManager] starting pid={Environment.ProcessId}");
+namespace MyOs.ServiceManager;
 
-foreach (string mountPoint in CoreMounts.All)
+internal static class Program
 {
-    Console.WriteLine(IsMounted(mountPoint)
-        ? $"[ServiceManager] confirmed {mountPoint} mounted"
-        : $"[ServiceManager] missing mount {mountPoint}");
-}
-
-using CancellationTokenSource shutdown = new();
-using PosixSignalRegistration sigint = PosixSignalRegistration.Create(PosixSignal.SIGINT, context =>
-{
-    context.Cancel = true;
-    shutdown.Cancel();
-});
-using PosixSignalRegistration sigterm = PosixSignalRegistration.Create(PosixSignal.SIGTERM, context =>
-{
-    context.Cancel = true;
-    shutdown.Cancel();
-});
-
-IReadOnlyList<ServiceManifest> manifests = LoadServiceManifests();
-ServiceRegistry registry = new(manifests);
-AppLauncher appLauncher = new();
-ShutdownCoordinator shutdownCoordinator = new(registry, shutdown);
-
-Task supervisor = registry.RunAsync(shutdown.Token);
-Task ipcServer = IpcServer.RunAsync(
-    IpcPaths.ServiceManagerSocket,
-    (request, _) => Task.FromResult(HandleRequest(request, registry, appLauncher, shutdownCoordinator)),
-    shutdown.Token);
-Console.WriteLine($"[ServiceManager] listening on {IpcPaths.ServiceManagerSocket}");
-
-Console.WriteLine("[ServiceManager] idle");
-
-try
-{
-    await Task.WhenAll(supervisor, ipcServer);
-}
-catch (OperationCanceledException) when (shutdown.IsCancellationRequested)
-{
-}
-
-Console.WriteLine("[ServiceManager] stopping");
-
-static IpcResponse HandleRequest(
-    IpcRequest request,
-    ServiceRegistry registry,
-    AppLauncher appLauncher,
-    ShutdownCoordinator shutdownCoordinator)
-{
-    return request.Command switch
+    private static async Task Main()
     {
-        "service.list" => IpcResponse.Success(request.Id, BuildServiceList(registry.Snapshots())),
-        "service.start" => HandleServiceCommand(request, registry.Start),
-        "service.stop" => HandleServiceCommand(request, registry.Stop),
-        "service.restart" => HandleServiceCommand(request, registry.Restart),
-        "system.status" => IpcResponse.Success(request.Id, BuildSystemStatus(registry.Snapshots())),
-        "system.shutdown" => HandleShutdown(request, shutdownCoordinator),
-        "app.list" => IpcResponse.Success(request.Id, BuildAppList(appLauncher.ListApps())),
-        "app.run" => HandleAppRun(request, appLauncher),
-        _ => IpcResponse.Failure(request.Id, $"unknown command: {request.Command}"),
-    };
-}
+        using SerialLogScope serialLog = SerialLogScope.TryOpen(SystemPaths.Serial);
+        Console.WriteLine($"[ServiceManager] starting pid={Environment.ProcessId}");
 
-static IpcResponse HandleServiceCommand(IpcRequest request, Func<string, ServiceCommandResult> command)
-{
-    string? name = request.Args.TryGetPropertyValue("name", out JsonNode? nameNode)
-        ? nameNode?.GetValue<string>()
-        : null;
+        foreach (string mountPoint in CoreMounts.All)
+        {
+            Console.WriteLine(IsMounted(mountPoint)
+                ? $"[ServiceManager] confirmed {mountPoint} mounted"
+                : $"[ServiceManager] missing mount {mountPoint}");
+        }
 
-    if (string.IsNullOrWhiteSpace(name))
-    {
-        return IpcResponse.Failure(request.Id, "missing service name");
+        using CancellationTokenSource shutdown = new();
+        using PosixSignalRegistration sigint = PosixSignalRegistration.Create(PosixSignal.SIGINT, context =>
+        {
+            context.Cancel = true;
+            shutdown.Cancel();
+        });
+        using PosixSignalRegistration sigterm = PosixSignalRegistration.Create(PosixSignal.SIGTERM, context =>
+        {
+            context.Cancel = true;
+            shutdown.Cancel();
+        });
+
+        IReadOnlyList<ServiceManifest> manifests = LoadServiceManifests();
+        ServiceRegistry registry = new(manifests);
+        AppLauncher appLauncher = new();
+        ShutdownCoordinator shutdownCoordinator = new(registry, shutdown);
+
+        Task supervisor = registry.RunAsync(shutdown.Token);
+        Task ipcServer = IpcServer.RunAsync(
+            IpcPaths.ServiceManagerSocket,
+            (request, _) => Task.FromResult(HandleRequest(request, registry, appLauncher, shutdownCoordinator)),
+            shutdown.Token);
+        Console.WriteLine($"[ServiceManager] listening on {IpcPaths.ServiceManagerSocket}");
+
+        Console.WriteLine("[ServiceManager] idle");
+
+        try
+        {
+            await Task.WhenAll(supervisor, ipcServer);
+        }
+        catch (OperationCanceledException) when (shutdown.IsCancellationRequested)
+        {
+        }
+
+        Console.WriteLine("[ServiceManager] stopping");
     }
 
-    ServiceCommandResult result = command(name);
-    JsonObject data = new()
+    static IpcResponse HandleRequest(
+        IpcRequest request,
+        ServiceRegistry registry,
+        AppLauncher appLauncher,
+        ShutdownCoordinator shutdownCoordinator)
     {
-        ["message"] = result.Message,
-    };
-
-    return result.Success
-        ? IpcResponse.Success(request.Id, data)
-        : IpcResponse.Failure(request.Id, result.Message);
-}
-
-static IpcResponse HandleShutdown(IpcRequest request, ShutdownCoordinator shutdownCoordinator)
-{
-    string actionText = request.Args.TryGetPropertyValue("action", out JsonNode? actionNode)
-        ? actionNode?.GetValue<string>() ?? string.Empty
-        : string.Empty;
-
-    ShutdownAction action = actionText.Equals("poweroff", StringComparison.OrdinalIgnoreCase)
-        ? ShutdownAction.PowerOff
-        : ShutdownAction.Reboot;
-
-    string message = shutdownCoordinator.Request(action);
-    return IpcResponse.Success(request.Id, new JsonObject
-    {
-        ["message"] = message,
-    });
-}
-
-static IpcResponse HandleAppRun(IpcRequest request, AppLauncher appLauncher)
-{
-    string? name = request.Args.TryGetPropertyValue("name", out JsonNode? nameNode)
-        ? nameNode?.GetValue<string>()
-        : null;
-
-    AppRunResult result = appLauncher.Run(name);
-    JsonObject data = new()
-    {
-        ["name"] = result.Name,
-        ["pid"] = result.Pid,
-        ["message"] = result.Message,
-    };
-
-    return result.Success
-        ? IpcResponse.Success(request.Id, data)
-        : IpcResponse.Failure(request.Id, result.Message);
-}
-
-static JsonObject BuildServiceList(IReadOnlyList<ServiceSnapshot> services)
-{
-    JsonArray serviceItems = new();
-    foreach (ServiceSnapshot service in services)
-    {
-        serviceItems.Add((JsonNode)new JsonObject
+        return request.Command switch
         {
-            ["name"] = service.Name,
-            ["exec"] = service.Exec,
-            ["state"] = service.State,
-            ["pid"] = service.Pid,
-            ["restart"] = service.Restart,
-            ["critical"] = service.Critical,
-            ["lastExit"] = service.LastExit,
+            "service.list" => IpcResponse.Success(request.Id, BuildServiceList(registry.Snapshots())),
+            "service.start" => HandleServiceCommand(request, registry.Start),
+            "service.stop" => HandleServiceCommand(request, registry.Stop),
+            "service.restart" => HandleServiceCommand(request, registry.Restart),
+            "system.status" => IpcResponse.Success(request.Id, BuildSystemStatus(registry.Snapshots())),
+            "system.shutdown" => HandleShutdown(request, shutdownCoordinator),
+            "app.list" => IpcResponse.Success(request.Id, BuildAppList(appLauncher.ListApps())),
+            "app.run" => HandleAppRun(request, appLauncher),
+            _ => IpcResponse.Failure(request.Id, $"unknown command: {request.Command}"),
+        };
+    }
+
+    static IpcResponse HandleServiceCommand(IpcRequest request, Func<string, ServiceCommandResult> command)
+    {
+        string? name = request.Args.TryGetPropertyValue("name", out JsonNode? nameNode)
+            ? nameNode?.GetValue<string>()
+            : null;
+
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            return IpcResponse.Failure(request.Id, "missing service name");
+        }
+
+        ServiceCommandResult result = command(name);
+        JsonObject data = new()
+        {
+            ["message"] = result.Message,
+        };
+
+        return result.Success
+            ? IpcResponse.Success(request.Id, data)
+            : IpcResponse.Failure(request.Id, result.Message);
+    }
+
+    static IpcResponse HandleShutdown(IpcRequest request, ShutdownCoordinator shutdownCoordinator)
+    {
+        string actionText = request.Args.TryGetPropertyValue("action", out JsonNode? actionNode)
+            ? actionNode?.GetValue<string>() ?? string.Empty
+            : string.Empty;
+
+        ShutdownAction action = actionText.Equals("poweroff", StringComparison.OrdinalIgnoreCase)
+            ? ShutdownAction.PowerOff
+            : ShutdownAction.Reboot;
+
+        string message = shutdownCoordinator.Request(action);
+        return IpcResponse.Success(request.Id, new JsonObject
+        {
+            ["message"] = message,
         });
     }
 
-    return new JsonObject
+    static IpcResponse HandleAppRun(IpcRequest request, AppLauncher appLauncher)
     {
-        ["services"] = serviceItems,
-    };
-}
+        string? name = request.Args.TryGetPropertyValue("name", out JsonNode? nameNode)
+            ? nameNode?.GetValue<string>()
+            : null;
 
-static JsonObject BuildSystemStatus(IReadOnlyList<ServiceSnapshot> services)
-{
-    JsonArray mounts = new();
-    foreach (string mountPoint in CoreMounts.All)
-    {
-        mounts.Add((JsonNode)new JsonObject
+        AppRunResult result = appLauncher.Run(name);
+        JsonObject data = new()
         {
-            ["path"] = mountPoint,
-            ["mounted"] = IsMounted(mountPoint),
-        });
+            ["name"] = result.Name,
+            ["pid"] = result.Pid,
+            ["message"] = result.Message,
+        };
+
+        return result.Success
+            ? IpcResponse.Success(request.Id, data)
+            : IpcResponse.Failure(request.Id, result.Message);
     }
 
-    return new JsonObject
+    static JsonObject BuildServiceList(IReadOnlyList<ServiceSnapshot> services)
     {
-        ["uptimeSeconds"] = ReadUptimeSeconds(),
-        ["totalServices"] = services.Count,
-        ["runningServices"] = services.Count(service => service.State == ServiceStateText.Running),
-        ["mounts"] = mounts,
-    };
-}
-
-static JsonObject BuildAppList(IReadOnlyList<AppManifest> apps)
-{
-    JsonArray appItems = new();
-    foreach (AppManifest app in apps)
-    {
-        appItems.Add((JsonNode)new JsonObject
+        JsonArray serviceItems = new();
+        foreach (ServiceSnapshot service in services)
         {
-            ["name"] = app.Name,
-            ["id"] = app.Id,
-            ["version"] = app.Version,
-            ["kind"] = app.Kind,
-            ["bundle"] = app.Bundle,
-            ["entry"] = app.Entry,
-        });
-    }
-
-    return new JsonObject
-    {
-        ["apps"] = appItems,
-    };
-}
-
-static IReadOnlyList<ServiceManifest> LoadServiceManifests()
-{
-    try
-    {
-        List<ServiceManifest> manifests = new();
-        if (Directory.Exists(SystemPaths.SystemServices))
-        {
-            foreach (string manifestPath in Directory.EnumerateFiles(SystemPaths.SystemServices, "*.service.json").OrderBy(Path.GetFileName))
+            serviceItems.Add((JsonNode)new JsonObject
             {
-                manifests.Add(ServiceManifest.ReadFromFile(manifestPath));
-            }
+                ["name"] = service.Name,
+                ["exec"] = service.Exec,
+                ["state"] = service.State,
+                ["pid"] = service.Pid,
+                ["restart"] = service.Restart,
+                ["critical"] = service.Critical,
+                ["lastExit"] = service.LastExit,
+            });
         }
 
-        if (manifests.Count > 0)
+        return new JsonObject
         {
-            Console.WriteLine($"[ServiceManager] loaded {manifests.Count} service manifest(s) from {SystemPaths.SystemServices}");
-            return manifests;
+            ["services"] = serviceItems,
+        };
+    }
+
+    static JsonObject BuildSystemStatus(IReadOnlyList<ServiceSnapshot> services)
+    {
+        JsonArray mounts = new();
+        foreach (string mountPoint in CoreMounts.All)
+        {
+            mounts.Add((JsonNode)new JsonObject
+            {
+                ["path"] = mountPoint,
+                ["mounted"] = IsMounted(mountPoint),
+            });
         }
 
-        Console.WriteLine($"[ServiceManager] no service manifests found in {SystemPaths.SystemServices}; using fallback Shell service");
-    }
-    catch (Exception ex)
-    {
-        Console.WriteLine($"[ServiceManager] failed to load service manifests: {ex.Message}");
-        Console.WriteLine("[ServiceManager] using fallback Shell service");
+        return new JsonObject
+        {
+            ["uptimeSeconds"] = ReadUptimeSeconds(),
+            ["totalServices"] = services.Count,
+            ["runningServices"] = services.Count(service => service.State == ServiceStateText.Running),
+            ["mounts"] = mounts,
+        };
     }
 
-    return new[]
+    static JsonObject BuildAppList(IReadOnlyList<AppManifest> apps)
     {
+        JsonArray appItems = new();
+        foreach (AppManifest app in apps)
+        {
+            appItems.Add((JsonNode)new JsonObject
+            {
+                ["name"] = app.Name,
+                ["id"] = app.Id,
+                ["version"] = app.Version,
+                ["kind"] = app.Kind,
+                ["bundle"] = app.Bundle,
+                ["entry"] = app.Entry,
+            });
+        }
+
+        return new JsonObject
+        {
+            ["apps"] = appItems,
+        };
+    }
+
+    static IReadOnlyList<ServiceManifest> LoadServiceManifests()
+    {
+        try
+        {
+            List<ServiceManifest> manifests = new();
+            if (Directory.Exists(SystemPaths.SystemServices))
+            {
+                foreach (string manifestPath in Directory.EnumerateFiles(SystemPaths.SystemServices, "*.service.json").OrderBy(Path.GetFileName))
+                {
+                    manifests.Add(ServiceManifest.ReadFromFile(manifestPath));
+                }
+            }
+
+            if (manifests.Count > 0)
+            {
+                Console.WriteLine($"[ServiceManager] loaded {manifests.Count} service manifest(s) from {SystemPaths.SystemServices}");
+                return manifests;
+            }
+
+            Console.WriteLine($"[ServiceManager] no service manifests found in {SystemPaths.SystemServices}; using fallback Shell service");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[ServiceManager] failed to load service manifests: {ex.Message}");
+            Console.WriteLine("[ServiceManager] using fallback Shell service");
+        }
+
+        return new[]
+        {
         new ServiceManifest("Shell", SystemPaths.Shell, ServiceRestartPolicy.Always, critical: true),
     };
-}
+    }
 
-static bool IsMounted(string mountPoint)
-{
-    try
+    static bool IsMounted(string mountPoint)
     {
-        foreach (string line in File.ReadLines(SystemPaths.ProcMounts))
+        try
         {
-            string[] fields = line.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-            if (fields.Length >= 2 && fields[1] == mountPoint)
+            foreach (string line in File.ReadLines(SystemPaths.ProcMounts))
             {
-                return true;
+                string[] fields = line.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+                if (fields.Length >= 2 && fields[1] == mountPoint)
+                {
+                    return true;
+                }
             }
         }
-    }
-    catch (Exception ex)
-    {
-        Console.WriteLine($"[ServiceManager] could not read {SystemPaths.ProcMounts}: {ex.Message}");
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[ServiceManager] could not read {SystemPaths.ProcMounts}: {ex.Message}");
+        }
+
+        return false;
     }
 
-    return false;
-}
-
-static double ReadUptimeSeconds()
-{
-    try
+    static double ReadUptimeSeconds()
     {
-        string uptime = File.ReadAllText(SystemPaths.ProcUptime).Trim();
-        string firstField = uptime.Split(' ', StringSplitOptions.RemoveEmptyEntries)[0];
-        return double.Parse(firstField, CultureInfo.InvariantCulture);
-    }
-    catch
-    {
-        return 0;
+        try
+        {
+            string uptime = File.ReadAllText(SystemPaths.ProcUptime).Trim();
+            string firstField = uptime.Split(' ', StringSplitOptions.RemoveEmptyEntries)[0];
+            return double.Parse(firstField, CultureInfo.InvariantCulture);
+        }
+        catch
+        {
+            return 0;
+        }
     }
 }
 

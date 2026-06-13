@@ -4,82 +4,90 @@ using System.Text.Json.Nodes;
 using MyOs;
 using MyOs.Ipc;
 
-using SerialLogScope serialLog = SerialLogScope.TryOpen(SystemPaths.Serial);
-Console.WriteLine($"[devd] starting pid={Environment.ProcessId}");
+namespace MyOs.DeviceManager;
 
-using CancellationTokenSource shutdown = new();
-using PosixSignalRegistration sigint = PosixSignalRegistration.Create(PosixSignal.SIGINT, context =>
+internal static class Program
 {
-    context.Cancel = true;
-    shutdown.Cancel();
-});
-using PosixSignalRegistration sigterm = PosixSignalRegistration.Create(PosixSignal.SIGTERM, context =>
-{
-    context.Cancel = true;
-    shutdown.Cancel();
-});
-
-Console.WriteLine($"[devd] listening on {SystemPaths.DeviceSocket}");
-await IpcServer.RunAsync(
-    SystemPaths.DeviceSocket,
-    (request, _) => Task.FromResult(HandleRequest(request)),
-    shutdown.Token);
-
-Console.WriteLine("[devd] stopping");
-
-static IpcResponse HandleRequest(IpcRequest request) =>
-    request.Command switch
+    private static async Task Main()
     {
-        "device.list" => IpcResponse.Success(request.Id, BuildDeviceList()),
-        _ => IpcResponse.Failure(request.Id, $"unknown command: {request.Command}"),
-    };
+        using SerialLogScope serialLog = SerialLogScope.TryOpen(SystemPaths.Serial);
+        Console.WriteLine($"[devd] starting pid={Environment.ProcessId}");
 
-static JsonObject BuildDeviceList()
-{
-    JsonArray devices = new();
+        using CancellationTokenSource shutdown = new();
+        using PosixSignalRegistration sigint = PosixSignalRegistration.Create(PosixSignal.SIGINT, context =>
+        {
+            context.Cancel = true;
+            shutdown.Cancel();
+        });
+        using PosixSignalRegistration sigterm = PosixSignalRegistration.Create(PosixSignal.SIGTERM, context =>
+        {
+            context.Cancel = true;
+            shutdown.Cancel();
+        });
 
-    if (!Directory.Exists(SystemPaths.SysClass))
+        Console.WriteLine($"[devd] listening on {SystemPaths.DeviceSocket}");
+        await IpcServer.RunAsync(
+            SystemPaths.DeviceSocket,
+            (request, _) => Task.FromResult(HandleRequest(request)),
+            shutdown.Token);
+
+        Console.WriteLine("[devd] stopping");
+    }
+
+    static IpcResponse HandleRequest(IpcRequest request) =>
+        request.Command switch
+        {
+            "device.list" => IpcResponse.Success(request.Id, BuildDeviceList()),
+            _ => IpcResponse.Failure(request.Id, $"unknown command: {request.Command}"),
+        };
+
+    static JsonObject BuildDeviceList()
     {
+        JsonArray devices = new();
+
+        if (!Directory.Exists(SystemPaths.SysClass))
+        {
+            return new JsonObject
+            {
+                ["devices"] = devices,
+            };
+        }
+
+        foreach (string classDirectory in Directory.EnumerateDirectories(SystemPaths.SysClass).OrderBy(Path.GetFileName))
+        {
+            string deviceClass = Path.GetFileName(classDirectory);
+            foreach (string deviceDirectory in Directory.EnumerateDirectories(classDirectory).OrderBy(Path.GetFileName))
+            {
+                string name = Path.GetFileName(deviceDirectory);
+                string? dev = ReadDeviceNumber(deviceDirectory);
+
+                devices.Add((JsonNode)new JsonObject
+                {
+                    ["name"] = name,
+                    ["class"] = deviceClass,
+                    ["sysPath"] = deviceDirectory,
+                    ["dev"] = dev,
+                });
+            }
+        }
+
         return new JsonObject
         {
             ["devices"] = devices,
         };
     }
 
-    foreach (string classDirectory in Directory.EnumerateDirectories(SystemPaths.SysClass).OrderBy(Path.GetFileName))
+    static string? ReadDeviceNumber(string deviceDirectory)
     {
-        string deviceClass = Path.GetFileName(classDirectory);
-        foreach (string deviceDirectory in Directory.EnumerateDirectories(classDirectory).OrderBy(Path.GetFileName))
+        string devPath = Path.Combine(deviceDirectory, "dev");
+        try
         {
-            string name = Path.GetFileName(deviceDirectory);
-            string? dev = ReadDeviceNumber(deviceDirectory);
-
-            devices.Add((JsonNode)new JsonObject
-            {
-                ["name"] = name,
-                ["class"] = deviceClass,
-                ["sysPath"] = deviceDirectory,
-                ["dev"] = dev,
-            });
+            return File.Exists(devPath) ? File.ReadAllText(devPath).Trim() : null;
         }
-    }
-
-    return new JsonObject
-    {
-        ["devices"] = devices,
-    };
-}
-
-static string? ReadDeviceNumber(string deviceDirectory)
-{
-    string devPath = Path.Combine(deviceDirectory, "dev");
-    try
-    {
-        return File.Exists(devPath) ? File.ReadAllText(devPath).Trim() : null;
-    }
-    catch
-    {
-        return null;
+        catch
+        {
+            return null;
+        }
     }
 }
 
